@@ -12,6 +12,7 @@ as concise unobtrusive notification pop-ups and retained in Discovery History fo
 ## What Discovery Watch detects
 
 - Megaships and installations
+- If star system discovered.
 - Notable Stellar Phenomena
 - Titans, tourist beacons and listening posts
 - Nonhuman signal sources
