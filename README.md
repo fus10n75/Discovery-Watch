@@ -3,7 +3,7 @@ Offline-first exploration intelligence for Elite Dangerous
 
 Discovery Watch monitors Elite Dangerous journal files while you play and
 highlights discoveries that can easily be overlooked. Findings are presented
-as concise notifications and retained in Discovery History for later review.
+as concise unobtrusive notification pop-ups and retained in Discovery History for later review.
 
 > **Project status:** Discovery Watch v1.32.3 is a testing release. Real
 > in-game feedback about missed detections, incorrect findings, duplicate
