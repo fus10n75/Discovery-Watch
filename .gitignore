@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.db
+*.log
+*.json
+.windows-build-venv/
+.appimage-build-venv/
+build/
+dist/
+*.AppImage
+*.exe
+*.zip
+.pytest_cache/
