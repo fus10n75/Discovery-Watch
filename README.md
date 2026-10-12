@@ -156,20 +156,6 @@ Run the automated tests from the project folder with:
 python3 -m unittest -q
 ```
 
-The v1.32.3 suite contains 184 tests. Detection logic is organised under
-`discovery_watch_core`, while `discovery_watch.py` provides the desktop
-interface and journal-monitoring application.
-
-Please do not commit generated or personal files such as:
-
-- `__pycache__/`
-- SQLite databases
-- Journal files
-- Diagnostic exports
-- Build environments
-- `build/` and `dist/` output
-- Executables, AppImages or release ZIP files
-
 ## Licence
 
 Discovery Watch is licensed under the GNU General Public License,
