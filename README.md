@@ -1,6 +1,6 @@
 # Discovery Watch
 
-A separate, standard-library Python/Tkinter application for monitoring Elite Dangerous journal files. It does not require ED Mystery AI, does not touch its database, and monitors **every system**.
+A separate, standard-library Python/Tkinter application for monitoring Elite Dangerous journal files. 
 
 ## Run
 
