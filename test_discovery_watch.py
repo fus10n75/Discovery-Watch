@@ -44,6 +44,8 @@ from discovery_watch import (App, AlertPopup, Monitor, classify, detect_anomalie
                              popup_above_game_preference, save_popup_above_game_preference,
                              popup_sound_preference, save_popup_sound_preference,
                              popup_monitor_preference, save_popup_monitor_preference,
+                             popup_appearance_preferences, save_popup_appearance_preferences,
+                             POPUP_POSITION_CHOICES, POPUP_FONT_CHOICES,
                              POPUP_MONITOR_CHOICES, WINDOWS_NOTIFICATION_MODES,
                              WINDOWS_DEFAULT_NOTIFICATION_MODE, POPUP_TEST_SCENARIOS,
                              windows_notification_mode_preference,
@@ -71,13 +73,14 @@ from discovery_watch import (App, AlertPopup, Monitor, classify, detect_anomalie
                              validate_policy_registry, EXPLORATION_CRITERIA,
                              exploration_criteria_preferences,
                              save_exploration_criteria_preferences,
-                             bundled_resource, application_icon_paths)
+                             bundled_resource, application_icon_paths,
+                             ensure_linux_ui_scaling)
 from discovery_watch_core.theme import THEME, THEME_VERSION, THEMED_STYLES, apply_app_theme
 from discovery_watch_core.exploration_criteria import gas_giant_bulk_density
 
 class DiscoveryWatchTests(unittest.TestCase):
     def test_v112_alert_levels_preferences_and_diagnostics(self):
-        self.assertEqual(APP_VERSION,'1.32.3')
+        self.assertEqual(APP_VERSION,'1.33.0')
         self.assertEqual(alert_level('MEGASHIP'),'Important')
         self.assertEqual(alert_level('ANOMALY_ALERT'),'Review')
         self.assertEqual(alert_level('UNIDENTIFIED_SIGNAL'),'Informational')
@@ -105,7 +108,7 @@ class DiscoveryWatchTests(unittest.TestCase):
                 self.assertEqual((summary['findings'],summary['unresolved']),(2,1))
                 report=monitor.diagnostic_report()
                 encoded=json.dumps(report)
-                self.assertEqual(report['application']['version'],'1.32.3')
+                self.assertEqual(report['application']['version'],'1.33.0')
                 self.assertNotIn('must-not-leak',encoded)
                 self.assertEqual(report['database']['row_counts']['alerts'],2)
 
@@ -1454,6 +1457,27 @@ class Version1160Tests(unittest.TestCase):
         self.assertEqual(windows_work_area_to_tk((0,0,1920,1080),baseline*1.5),(0,0,1280,720))
         self.assertEqual(windows_work_area_to_tk((-1920,0,0,1080),baseline*1.5),(-1280,0,0,720))
 
+    def test_linux_ui_scaling_corrects_small_bundled_tk_fonts(self):
+        class Tcl:
+            def __init__(self,value): self.value=value; self.set_to=None
+            def call(self,*args):
+                if len(args)==2: return self.value
+                self.set_to=args[2]; return ''
+        root=type('Root',(),{})(); root.tk=Tcl(1.0)
+        with patch('discovery_watch.platform.system',return_value='Linux'):
+            self.assertAlmostEqual(ensure_linux_ui_scaling(root,{}),96.0/72.0)
+        self.assertAlmostEqual(root.tk.set_to,96.0/72.0)
+
+        root.tk=Tcl(1.75)
+        with patch('discovery_watch.platform.system',return_value='Linux'):
+            self.assertEqual(ensure_linux_ui_scaling(root,{}),1.75)
+        self.assertEqual(root.tk.set_to,1.75)
+
+        root.tk=Tcl(1.0)
+        with patch('discovery_watch.platform.system',return_value='Linux'):
+            self.assertEqual(ensure_linux_ui_scaling(root,{'DISCOVERY_WATCH_UI_SCALE':'1.5'}),1.5)
+        self.assertEqual(root.tk.set_to,1.5)
+
     def test_alert_records_source_and_popup_decision(self):
         with tempfile.TemporaryDirectory() as directory:
             folder=Path(directory); journal=folder/'Journal.explain.log'; journal.write_text('')
@@ -1855,6 +1879,8 @@ class Version1230WindowsNotificationModeTests(unittest.TestCase):
         payload=decode_windows_overlay_payload(command[3])
         self.assertEqual(payload['owner'],22)
         self.assertEqual(payload['monitor'],'primary')
+        self.assertEqual(payload['position'],'Bottom right')
+        self.assertEqual(payload['font_size'],'Normal')
         self.assertIn('Installation detected',payload['body'])
         self.assertIn('creationflags',kwargs)
 
@@ -3338,3 +3364,28 @@ class Version1322ApplicationIconTests(unittest.TestCase):
         self.assertEqual(png_icon.read_bytes()[:8],b'\x89PNG\r\n\x1a\n')
         self.assertEqual(ico_icon.read_bytes()[:4],b'\x00\x00\x01\x00')
         self.assertEqual(bundled_resource('assets','icons','discovery-watch.png'),png_icon)
+
+
+class Version1330PublicBetaFoundationTests(unittest.TestCase):
+    def test_popup_appearance_defaults_and_persistence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path=Path(directory)/'preferences.sqlite3'
+            self.assertEqual(popup_appearance_preferences(db_path),('Bottom right','Normal'))
+            save_popup_appearance_preferences('Top left','Large',db_path)
+            self.assertEqual(popup_appearance_preferences(db_path),('Top left','Large'))
+            with self.assertRaises(ValueError):
+                save_popup_appearance_preferences('Somewhere','Large',db_path)
+
+    def test_all_popup_position_presets_remain_inside_work_area(self):
+        area=(100,50,1700,950)
+        positions={choice:popup_position(area,600,300,'Linux',choice)
+                   for choice in POPUP_POSITION_CHOICES}
+        self.assertEqual(positions['Top left'],(132,110))
+        self.assertEqual(positions['Bottom right'],(1068,618))
+        self.assertEqual(positions['Centre'],(600,350))
+        for x,y in positions.values():
+            self.assertGreaterEqual(x,area[0]); self.assertGreaterEqual(y,area[1])
+            self.assertLessEqual(x+600,area[2]); self.assertLessEqual(y+300,area[3])
+
+    def test_popup_size_choices_are_stable(self):
+        self.assertEqual(POPUP_FONT_CHOICES,('Small','Normal','Large'))

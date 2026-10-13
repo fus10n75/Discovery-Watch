@@ -11,7 +11,8 @@ __all__ = (
     'DEFAULT_WINDOW_GEOMETRY', 'HOME_OVERVIEW_LOWER_LAYOUT',
     'POPUP_RIGHT_MARGIN', 'POPUP_TOP_MARGIN', 'POPUP_EDGE_MARGIN',
     'QUICK_SIGNAL_KEYS', 'POPUP_TIMEOUT_CHOICES', 'POPUP_MONITOR_CHOICES',
-    'POPUP_MONITOR_VALUES', 'WINDOWS_NOTIFICATION_MODES',
+    'POPUP_MONITOR_VALUES', 'POPUP_POSITION_CHOICES', 'POPUP_FONT_CHOICES',
+    'POPUP_FONT_SCALES', 'WINDOWS_NOTIFICATION_MODES',
     'WINDOWS_DEFAULT_NOTIFICATION_MODE', 'POPUP_TEST_SCENARIOS',
     'LOCATION_CONTEXT_EVENTS', 'EDSM_CACHE_HOURS', 'EDSM_BODIES_URL',
     'EDSM_SYSTEM_URL', 'KNOWN_POI_RULES', 'KNOWN_POI_PLURALS',
@@ -21,7 +22,7 @@ __all__ = (
 APP_DIR = Path.home() / '.discovery_watch'
 DB_PATH = APP_DIR / 'discoveries.sqlite3'
 DEFAULT_JOURNAL = Path.home() / 'Saved Games' / 'Frontier Developments' / 'Elite Dangerous'
-APP_VERSION = '1.32.3'
+APP_VERSION = '1.33.0'
 SCHEMA_VERSION = 5
 PRIMARY_TAB_LABELS = ('Home','Discovery history','System Explorer','Settings')
 SETTINGS_TAB_LABELS = ('Basic alerts','Advanced alert rules','Data & diagnostics')
@@ -41,6 +42,9 @@ POPUP_TIMEOUT_CHOICES = (5,10,15,30,60)
 POPUP_MONITOR_CHOICES = ('Main monitor','Discovery Watch monitor','Mouse pointer monitor')
 POPUP_MONITOR_VALUES = {'Main monitor':'primary','Discovery Watch monitor':'application',
                         'Mouse pointer monitor':'pointer'}
+POPUP_POSITION_CHOICES = ('Top right','Top left','Bottom right','Bottom left','Centre')
+POPUP_FONT_CHOICES = ('Small','Normal','Large')
+POPUP_FONT_SCALES = {'Small':0.88,'Normal':1.0,'Large':1.2}
 WINDOWS_NOTIFICATION_MODES = ('Native Windows notification','Windows game overlay')
 WINDOWS_DEFAULT_NOTIFICATION_MODE = WINDOWS_NOTIFICATION_MODES[1]
 POPUP_TEST_SCENARIOS = ('Megaship discovery','Surface biology','Anomaly review')

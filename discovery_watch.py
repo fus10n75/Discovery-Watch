@@ -59,6 +59,21 @@ def application_icon_paths():
             bundled_resource(*root,'discovery-watch.ico'))
 
 
+def ensure_linux_ui_scaling(root,environment=None):
+    """Prevent bundled Tk builds from rendering undersized text on Linux."""
+    if platform.system()!='Linux': return None
+    environment=os.environ if environment is None else environment
+    try: current=float(root.tk.call('tk','scaling'))
+    except (tk.TclError,TypeError,ValueError): current=1.0
+    requested=environment.get('DISCOVERY_WATCH_UI_SCALE','').strip()
+    try: target=float(requested) if requested else max(current,96.0/72.0)
+    except ValueError: target=max(current,96.0/72.0)
+    target=max(0.75,min(4.0,target))
+    try: root.tk.call('tk','scaling',target)
+    except tk.TclError: return current
+    return target
+
+
 
 
 
@@ -127,7 +142,7 @@ def _windows_monitor_info_type():
     return _WINDOWS_MONITOR_INFO_TYPE
 
 
-def popup_position(area,width,height,system_name=None):
+def popup_position(area,width,height,system_name=None,choice=None):
     """Return a safely clamped popup position in Tk screen coordinates."""
     left,top,right,bottom=area
     available_width=max(1,right-left)
@@ -135,13 +150,21 @@ def popup_position(area,width,height,system_name=None):
     width=max(1,min(int(width),available_width))
     height=max(1,min(int(height),available_height))
     system_name=platform.system() if system_name is None else system_name
-    if system_name=='Windows':
+    if choice is None and system_name=='Windows':
         # Centring leaves generous room on both sides when Windows and Tk report
         # slightly different logical coordinates under display scaling.
         x=left+(available_width-width)//2
-    else:
+    elif choice is None:
         x=right-width-POPUP_RIGHT_MARGIN
-    y=top+POPUP_TOP_MARGIN
+    else:
+        horizontal='left' if 'left' in choice.casefold() else 'right'
+        x=left+POPUP_EDGE_MARGIN if horizontal=='left' else right-width-POPUP_EDGE_MARGIN
+    if choice and choice.casefold()=='centre':
+        x=left+(available_width-width)//2; y=top+(available_height-height)//2
+    elif choice and 'bottom' in choice.casefold():
+        y=bottom-height-POPUP_EDGE_MARGIN
+    else:
+        y=top+POPUP_TOP_MARGIN
     maximum_x=max(left,right-width-POPUP_EDGE_MARGIN)
     maximum_y=max(top,bottom-height-POPUP_EDGE_MARGIN)
     return (min(max(left+POPUP_EDGE_MARGIN,x),maximum_x),
@@ -459,7 +482,7 @@ def send_windows_notification(findings,metadata=None,timeout=15,widget=None):
 
 
 def send_windows_overlay(widget,findings,metadata=None,timeout=15,monitor_choice='Main monitor',
-                         user32=None,popen_factory=None):
+                         user32=None,popen_factory=None,position='Bottom right',font_size='Normal'):
     """Launch the native overlay in an isolated process so Tk cannot affect focus."""
     if platform.system()!='Windows':
         return False
@@ -472,6 +495,7 @@ def send_windows_overlay(widget,findings,metadata=None,timeout=15,monitor_choice
         payload={'title':title,'body':body[:900],
                  'timeout':max(5,min(60,int(timeout or 15))),
                  'monitor':POPUP_MONITOR_VALUES.get(monitor_choice,'primary'),
+                 'position':position,'font_size':font_size,
                  'owner':owner}
         encoded=base64.urlsafe_b64encode(json.dumps(payload,ensure_ascii=True).encode('ascii')).decode('ascii')
         popen_factory(windows_overlay_command(encoded),
@@ -580,7 +604,8 @@ def run_windows_overlay(payload):
         title=str(payload.get('title') or 'Discovery Watch')
         body=str(payload.get('body') or 'New discovery alert')
         timeout=max(5,min(60,int(payload.get('timeout') or 15)))
-        width=620; lines=max(1,min(8,len(body.splitlines())))
+        scale=POPUP_FONT_SCALES.get(str(payload.get('font_size') or 'Normal'),1.0)
+        width=int(620*scale); lines=max(1,min(8,len(body.splitlines())))
         height=max(190,min(360,135+lines*28))
         def rgb(red,green,blue): return red | (green<<8) | (blue<<16)
         @WNDPROC
@@ -593,14 +618,14 @@ def run_windows_overlay(payload):
                 accent=wintypes.RECT(0,0,7,height)
                 brush=gdi32.CreateSolidBrush(rgb(255,140,26)); user32.FillRect(hdc,ctypes.byref(accent),brush)
                 gdi32.DeleteObject(brush); gdi32.SetBkMode(hdc,1)
-                label_font=gdi32.CreateFontW(-15,0,0,0,700,0,0,0,1,0,0,5,0,'Segoe UI')
+                label_font=gdi32.CreateFontW(-int(15*scale),0,0,0,700,0,0,0,1,0,0,5,0,'Segoe UI')
                 old=gdi32.SelectObject(hdc,label_font); gdi32.SetTextColor(hdc,rgb(255,140,26))
                 gdi32.TextOutW(hdc,25,16,'DISCOVERY WATCH',15)
-                heading_font=gdi32.CreateFontW(-23,0,0,0,700,0,0,0,1,0,0,5,0,'Segoe UI')
+                heading_font=gdi32.CreateFontW(-int(23*scale),0,0,0,700,0,0,0,1,0,0,5,0,'Segoe UI')
                 gdi32.SelectObject(hdc,heading_font); gdi32.SetTextColor(hdc,rgb(244,246,248))
                 heading=wintypes.RECT(25,43,width-25,77)
                 user32.DrawTextW(hdc,title,-1,ctypes.byref(heading),0x20|0x0800|0x8000)
-                body_font=gdi32.CreateFontW(-18,0,0,0,400,0,0,0,1,0,0,5,0,'Segoe UI')
+                body_font=gdi32.CreateFontW(-int(18*scale),0,0,0,400,0,0,0,1,0,0,5,0,'Segoe UI')
                 gdi32.SelectObject(hdc,body_font); gdi32.SetTextColor(hdc,rgb(117,215,240))
                 body_rect=wintypes.RECT(25,83,width-25,height-38)
                 user32.DrawTextW(hdc,body,-1,ctypes.byref(body_rect),0x10|0x0800|0x8000)
@@ -630,7 +655,8 @@ def run_windows_overlay(payload):
         info_type=_windows_monitor_info_type(); info=info_type(); info.cbSize=ctypes.sizeof(info)
         user32.GetMonitorInfoW.argtypes=(ctypes.c_void_p,ctypes.POINTER(info_type))
         if not (monitor and user32.GetMonitorInfoW(monitor,ctypes.byref(info))): return 1
-        x=info.rcWork.right-width-36; y=info.rcWork.bottom-height-48
+        x,y=popup_position((info.rcWork.left,info.rcWork.top,info.rcWork.right,info.rcWork.bottom),
+                           width,height,'Windows',str(payload.get('position') or 'Bottom right'))
         ex_style=0x00000008|0x00000020|0x00000080|0x00080000|0x08000000
         hwnd=user32.CreateWindowExW(ex_style,class_name,'Discovery Watch',0x80000000,
                                     x,y,width,height,None,None,instance,None)
@@ -2783,6 +2809,10 @@ class Monitor:
             windows_mode=(WINDOWS_NOTIFICATION_MODES[1]
                           if preferences.get('windows_notification_mode','overlay') in ('overlay','custom')
                           else WINDOWS_NOTIFICATION_MODES[0]))
+        popup_info['position']=preferences.get('popup_position','Bottom right')
+        popup_info['text_size']=preferences.get('popup_font_size','Normal')
+        decision_counts=dict(self.db.execute('''SELECT COALESCE(popup_decision,'Legacy / unknown'),COUNT(*)
+            FROM alerts GROUP BY COALESCE(popup_decision,'Legacy / unknown') ORDER BY COUNT(*) DESC''').fetchall())
         journals=[]
         if self.folder.is_dir():
             for file in sorted(self.folder.glob('Journal.*.log'))[-20:]:
@@ -2805,6 +2835,7 @@ class Monitor:
                         'expected_schema_version':SCHEMA_VERSION},
             'popup_diagnostics':popup_info,
             'notification_delivery':notification_delivery_summary(connection=self.db),
+            'notification_decisions':decision_counts,
             'settings':preferences,
             'journal_folder':str(self.folder),
             'journal_files':journals,
@@ -2975,7 +3006,8 @@ class AlertPopup(tk.Toplevel):
     LINUX_WINDOW_MODE='splash_with_normal_fallback'
 
     def __init__(self,parent,findings,timeout=15,auto_close=True,on_open_history=None,
-                 keep_above=True,play_sound=True,monitor_choice='Main monitor',metadata=None):
+                 keep_above=True,play_sound=True,monitor_choice='Main monitor',metadata=None,
+                 position='Bottom right',font_size='Normal'):
         super().__init__(parent)
         # Configure the window before its first map. Mapping a normal Toplevel
         # immediately can cause Linux window managers to take focus from Elite.
@@ -2988,6 +3020,8 @@ class AlertPopup(tk.Toplevel):
         self.keep_above=bool(keep_above)
         self.play_sound=bool(play_sound)
         self.monitor_choice=POPUP_MONITOR_VALUES.get(monitor_choice,'primary')
+        self.position=position
+        self.font_scale=POPUP_FONT_SCALES.get(font_size,1.0)
         self.metadata=list(metadata or [])
         self.compact_summary=bool(findings and self.metadata and
                                   all(item.get('compact_summary') for item in self.metadata))
@@ -3017,11 +3051,11 @@ class AlertPopup(tk.Toplevel):
         icon.create_oval(23,23,31,31,fill=self.ORANGE,outline='')
         heading=tk.Frame(header,bg=self.BG); heading.pack(side='left',fill='x',expand=True)
         tk.Label(heading,text='DISCOVERY WATCH',bg=self.BG,fg=self.ORANGE,
-                 font=('TkDefaultFont',9,'bold')).pack(anchor='w')
+                 font=('TkDefaultFont',max(8,round(9*self.font_scale)),'bold')).pack(anchor='w')
         count_text='DISCOVERIES DETECTED' if self.compact_summary else \
                    ('DISCOVERY UPDATE' if len(findings)==1 else f'{len(findings)} DISCOVERY UPDATES')
         tk.Label(heading,text=count_text,bg=self.BG,fg=self.TEXT,
-                 font=('TkDefaultFont',16,'bold')).pack(anchor='w',pady=(2,0))
+                 font=('TkDefaultFont',max(11,round(16*self.font_scale)),'bold')).pack(anchor='w',pady=(2,0))
 
         cards_view=tk.Frame(body,bg=self.BG)
         cards_view.pack(fill='both',expand=True,pady=(14,8))
@@ -3054,9 +3088,9 @@ class AlertPopup(tk.Toplevel):
                          fg=self.REVIEW if popup_attention_label(title)=='REVIEW' else self.ORANGE,
                          font=('TkDefaultFont',8,'bold')).pack(side='right')
             tk.Label(top,text=identity.get('name') or title,bg=self.PANEL,fg=self.TEXT,
-                     font=('TkDefaultFont',11,'bold')).pack(side='left',anchor='w')
+                     font=('TkDefaultFont',max(9,round(11*self.font_scale)),'bold')).pack(side='left',anchor='w')
             tk.Label(content,text=f'SYSTEM  {system or "Unknown system"}',bg=self.PANEL,fg=self.CYAN,
-                     font=('TkDefaultFont',9,'bold')).pack(anchor='w',pady=(4,2))
+                     font=('TkDefaultFont',max(8,round(9*self.font_scale)),'bold')).pack(anchor='w',pady=(4,2))
             if self.compact_summary and identity.get('key_fact'):
                 tk.Label(content,text=identity['key_fact'],bg=self.PANEL,fg=self.MUTED,
                          justify='left',anchor='w',wraplength=480,
@@ -3128,7 +3162,8 @@ class AlertPopup(tk.Toplevel):
         try:
             self.update_idletasks()
             left,top,right,bottom=popup_work_area(self.master,self.monitor_choice)
-            x,y=popup_position((left,top,right,bottom),self.winfo_width(),self.winfo_height())
+            x,y=popup_position((left,top,right,bottom),self.winfo_width(),self.winfo_height(),
+                               choice=self.position)
             self.geometry(f'{x:+d}{y:+d}')
             if platform.system()=='Windows':
                 # Tk must map its content as well as the Win32 wrapper. Both native
@@ -3240,6 +3275,7 @@ class App(tk.Tk):
     def __init__(self):
         startup_clock=time.perf_counter()
         super().__init__()
+        ensure_linux_ui_scaling(self)
         self._app_icon_image=None
         png_icon,ico_icon=application_icon_paths()
         try:
@@ -3277,6 +3313,9 @@ class App(tk.Tk):
         self.popup_above_game=tk.BooleanVar(value=popup_above_game_preference())
         self.popup_sound=tk.BooleanVar(value=popup_sound_preference())
         self.popup_monitor=tk.StringVar(value=popup_monitor_preference())
+        popup_position_choice,popup_font_choice=popup_appearance_preferences()
+        self.popup_position_choice=tk.StringVar(value=popup_position_choice)
+        self.popup_font_choice=tk.StringVar(value=popup_font_choice)
         self.windows_notification_mode=tk.StringVar(value=windows_notification_mode_preference())
         self.popup_test_choice=tk.StringVar(value=POPUP_TEST_SCENARIOS[0])
         detect_megaships,detect_installations,detect_unresolved=detection_preferences()
@@ -3638,6 +3677,22 @@ class App(tk.Tk):
         ttk.Label(notifications,text=('Wayland detected: your Linux desktop controls native-notification placement.'
                                       if wayland_active else 'Monitor selection applies to Discovery Watch custom popups.'),
                   wraplength=260).pack(anchor='w',pady=(0,4))
+        appearance_row=ttk.Frame(notifications); appearance_row.pack(anchor='w',fill='x',pady=2)
+        ttk.Label(appearance_row,text='Popup position:').pack(side='left')
+        position_box=ttk.Combobox(appearance_row,textvariable=self.popup_position_choice,
+                                  values=POPUP_POSITION_CHOICES,state='readonly',width=14)
+        position_box.pack(side='left',padx=(4,12))
+        position_box.bind('<<ComboboxSelected>>',lambda _event:self.save_popup_appearance_setting())
+        ttk.Label(appearance_row,text='Text size:').pack(side='left')
+        font_box=ttk.Combobox(appearance_row,textvariable=self.popup_font_choice,
+                              values=POPUP_FONT_CHOICES,state='readonly',width=9)
+        font_box.pack(side='left',padx=4)
+        font_box.bind('<<ComboboxSelected>>',lambda _event:self.save_popup_appearance_setting())
+        if wayland_active:
+            position_box.configure(state='disabled')
+            ttk.Label(notifications,text=('Wayland native notifications use the desktop notification position; '
+                                          'text size is also desktop controlled.'),
+                      wraplength=700).pack(anchor='w',pady=(0,4))
         timeout_row=ttk.Frame(notifications); timeout_row.pack(anchor='w',pady=2)
         ttk.Label(timeout_row,text='Popup timeout:').pack(side='left')
         timeout_box=ttk.Combobox(timeout_row,textvariable=self.popup_timeout,state='readonly',width=5,
@@ -4498,6 +4553,13 @@ class App(tk.Tk):
         except (sqlite3.Error,ValueError) as exc:
             messagebox.showerror('Setting not saved',str(exc))
 
+    def save_popup_appearance_setting(self):
+        try:
+            save_popup_appearance_preferences(self.popup_position_choice.get(),
+                                              self.popup_font_choice.get())
+        except (sqlite3.Error,ValueError) as exc:
+            messagebox.showerror('Setting not saved',str(exc))
+
     def save_windows_notification_mode_setting(self):
         try:
             save_windows_notification_mode_preference(self.windows_notification_mode.get())
@@ -4516,7 +4578,7 @@ class App(tk.Tk):
             return True
         item=self.windows_overlay_queue.popleft()
         shown=send_windows_overlay(self,item['findings'],item['metadata'],item['timeout'],
-                                   item['monitor'])
+                                   item['monitor'],position=item['position'],font_size=item['font_size'])
         if not shown:
             if fallback_on_failure:
                 error=windows_overlay_error_details()['message']
@@ -4543,11 +4605,15 @@ class App(tk.Tk):
     def _queue_windows_overlay(self,findings,metadata,timeout,monitor,source):
         """Queue Windows overlays so rapid journal events remain readable."""
         duration=max(5,min(60,int(timeout or 15)))
+        position_var=self.__dict__.get('popup_position_choice')
+        font_var=self.__dict__.get('popup_font_choice')
         self.windows_overlay_queue.append({
             'findings':list(findings),
             'metadata':list(metadata or []),
             'timeout':duration,
             'monitor':monitor,
+            'position':position_var.get() if position_var else 'Bottom right',
+            'font_size':font_var.get() if font_var else 'Normal',
             'source':source,
         })
         if self.windows_overlay_active:
@@ -4612,7 +4678,8 @@ class App(tk.Tk):
                              keep_above=self.popup_above_game.get(),
                              play_sound=self.popup_sound.get(),
                              monitor_choice=self.popup_monitor.get(),
-                             metadata=metadata)
+                             metadata=metadata,position=self.popup_position_choice.get(),
+                             font_size=self.popup_font_choice.get())
             self._audit_popup_delivery('Discovery Watch popup','launched',findings,source)
             return popup
         except tk.TclError as exc:

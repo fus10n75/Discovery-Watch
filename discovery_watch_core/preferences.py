@@ -7,6 +7,8 @@ from pathlib import Path
 from .config import (
     DB_PATH,
     POPUP_MONITOR_VALUES,
+    POPUP_POSITION_CHOICES,
+    POPUP_FONT_CHOICES,
     POPUP_TIMEOUT_CHOICES,
     WINDOWS_NOTIFICATION_MODES,
 )
@@ -26,6 +28,7 @@ __all__ = (
     'save_popup_above_game_preference', 'popup_sound_preference',
     'save_popup_sound_preference', 'popup_monitor_preference',
     'save_popup_monitor_preference', 'windows_notification_mode_preference',
+    'popup_appearance_preferences', 'save_popup_appearance_preferences',
     'save_windows_notification_mode_preference',
     'known_poi_arrival_preference', 'save_known_poi_arrival_preference',
     'arrival_discovery_status_preference',
@@ -271,6 +274,33 @@ def save_popup_monitor_preference(choice, db_path=DB_PATH):
         db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
         db.execute("INSERT OR REPLACE INTO preferences(key,value) VALUES('popup_monitor',?)",
                    (POPUP_MONITOR_VALUES[choice],))
+
+
+def popup_appearance_preferences(db_path=DB_PATH):
+    """Return portable popup placement and text-size choices."""
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    with _preference_connection(db_path) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        db.execute("INSERT OR IGNORE INTO preferences(key,value) VALUES('popup_position','Bottom right')")
+        db.execute("INSERT OR IGNORE INTO preferences(key,value) VALUES('popup_font_size','Normal')")
+        values=dict(db.execute("SELECT key,value FROM preferences WHERE key IN "
+                               "('popup_position','popup_font_size')"))
+    position=values.get('popup_position','Bottom right')
+    font=values.get('popup_font_size','Normal')
+    return (position if position in POPUP_POSITION_CHOICES else 'Bottom right',
+            font if font in POPUP_FONT_CHOICES else 'Normal')
+
+
+def save_popup_appearance_preferences(position,font_size,db_path=DB_PATH):
+    if position not in POPUP_POSITION_CHOICES:
+        raise ValueError('Unknown popup position')
+    if font_size not in POPUP_FONT_CHOICES:
+        raise ValueError('Unknown popup text size')
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    with _preference_connection(db_path) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        db.execute("INSERT OR REPLACE INTO preferences(key,value) VALUES('popup_position',?)",(position,))
+        db.execute("INSERT OR REPLACE INTO preferences(key,value) VALUES('popup_font_size',?)",(font_size,))
 
 
 def windows_notification_mode_preference(db_path=DB_PATH):
