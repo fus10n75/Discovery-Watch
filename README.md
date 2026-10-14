@@ -1,16 +1,93 @@
 # Discovery Watch
 
-A separate, standard-library Python/Tkinter application for monitoring Elite Dangerous journal files. 
+**Exploration intelligence for Elite Dangerous — private, configurable and offline-first.**
 
-## Run
+Discovery Watch quietly follows the journal created by Elite Dangerous and
+draws your attention to discoveries that are easy to overlook. You continue
+flying normally; when something potentially interesting appears, the app gives
+you a short notification and saves the evidence for later review.
 
-Python 3.9+ with Tkinter is required. On Linux, install your distribution's `python3-tk` package if necessary. Run `python3 discovery_watch.py` from this folder (Windows: `py discovery_watch.py`). Choose the folder containing `Journal.*.log`, then click **Start monitoring**. The default is `~/Saved Games/Frontier Developments/Elite Dangerous`; browse if yours differs.
+> **Explore normally. Discovery Watch keeps an eye on the journal.**
 
-Monitoring begins at the **end of existing journal files** to avoid replaying old discoveries. New journal files are read from the beginning. It checks every second while the window is open. Detection is conservative: keyword/name matching in selected journal events and stellar phenomena Codex categories. It cannot detect objects the game hasn't written to the journal; a match is not confirmation of rarity.
+The current public beta is **v1.33.0** and runs on Windows and Linux.
 
-Alerts and raw journal JSON are stored independently in `~/.discovery_watch/discoveries.sqlite3` (Windows: your user home `.discovery_watch` folder). Duplicate alerts from the same journal file/line/rule are ignored. Double-click a history row to view original JSON. You can disable popups and individual detection categories. Discovery Watch remains offline-first. Optional EDSM enrichment and popup sounds can be disabled, and the application does not continue running after it is closed.
+## What can it find?
 
-The current interface has four main areas: **Home** for live status and recent discoveries, **Discovery history** for reviewing every saved finding (including anomaly leads), **System Explorer** for recorded systems and journal search, and **Settings** for basic alerts, advanced rules, data tools and diagnostics. Press **Ctrl+F** to focus the search box on the current searchable page and **F5** to refresh all views.
+- Megaships, installations, listening posts and tourist beacons
+- Notable Stellar Phenomena, Titans and nonhuman signal sources
+- Guardian, Thargoid, biological, geological and human surface signals
+- Earth-like, water, valuable and terraformable worlds
+- High-gravity bodies and unusual orbital or ring configurations
+- Stratum Tectonicas leads and confirmations
+- Experimental possible Green Gas Giant candidates
+- Useful exploration and engineering-material opportunities
+
+Notifications are intentionally concise. Complete details, the system or body,
+the reason for the alert and the original journal evidence remain available in
+**Discovery History**. Each notification category can be enabled or disabled.
+
+## Offline-first and commander-friendly
+
+Core detection happens locally on your computer. Discovery Watch does not read
+game memory, modify Elite Dangerous or require an online account.
+
+Optional EDSM enrichment can add community catalogue information after local
+detection. It is secondary, can be switched off completely, and requires no
+EDSM account or API key. If EDSM or your internet connection is unavailable,
+the main application continues working normally.
+
+Discovery Watch stops when you close it. Journal evidence, preferences and
+Discovery History are stored locally in your user folder.
+
+## Getting started
+
+This testing release requires **Python 3.9 or newer** with Tkinter.
+
+1. Download and extract the latest testing ZIP from
+   [GitHub Releases](https://github.com/fus10n75/Discovery-Watch/releases).
+2. Open the extracted folder.
+3. On Windows, run `py discovery_watch.py`.
+4. On Linux, run `python3 discovery_watch.py`. Install your distribution's
+   `python3-tk` package first if Tkinter is not already available.
+5. Select the folder containing the game's `Journal.*.log` files and choose
+   **Start monitoring**.
+
+Discovery Watch remembers the selected journal location. Linux commanders
+running Elite through Steam/Proton may need to browse to the journal inside the
+game's Proton prefix.
+
+## Main areas
+
+- **Home** — current monitoring status and the latest useful intelligence
+- **Discovery History** — every saved finding and its supporting evidence
+- **System Explorer** — recorded systems and searchable journal information
+- **Settings** — notification choices, experimental rules, data tools and diagnostics
+
+Press **Ctrl+F** to focus search on supported pages and **F5** to refresh the
+interface.
+
+## Important limitations
+
+Discovery Watch can only react to information that Elite Dangerous writes to
+its journal. Some navigation-panel contacts are not published immediately, and
+some surface discoveries require FSS or DSS scanning first. Experimental leads
+are clearly labelled and should not be treated as proof of rarity or first
+discovery.
+
+## Testing and feedback
+
+The project is undergoing real in-game testing on Windows and Linux. Reports of
+missed detections, duplicate alerts, incorrect classifications, popup behaviour
+or display-scaling problems are welcome through
+[GitHub Issues](https://github.com/fus10n75/Discovery-Watch/issues).
+
+Run the automated test suite with:
+
+```bash
+python3 -m unittest discover -v
+```
+
+## Release history
 
 ## v1.1 additions
 
