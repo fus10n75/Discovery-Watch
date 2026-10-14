@@ -15,6 +15,7 @@ The current public beta is **v1.33.0** and runs on Windows and Linux.
 
 - Megaships, installations, listening posts and tourist beacons
 - Notable Stellar Phenomena, Titans and nonhuman signal sources
+- Possible first-discovery opportunities from arrival-star scan data
 - Guardian, Thargoid, biological, geological and human surface signals
 - Earth-like, water, valuable and terraformable worlds
 - High-gravity bodies and unusual orbital or ring configurations
