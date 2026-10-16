@@ -1,6 +1,6 @@
 # Discovery Watch
 
-**Exploration intelligence for Elite Dangerous — offline-first, private and built for commanders.**
+*Exploration intelligence for Elite Dangerous — offline-first, private and built for commanders.**
 
 Discovery Watch is a companion application that quietly monitors the journal
 created by Elite Dangerous and helps you notice discoveries that can easily be
