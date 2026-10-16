@@ -1,6 +1,6 @@
 # Discovery Watch internal architecture
 
-Discovery Watch v1.33.0 keeps `discovery_watch.py` as the launcher and public
+Discovery Watch v1.33.1 keeps `discovery_watch.py` as the launcher and public
 compatibility layer. Existing imports, startup commands and user workflows
 therefore continue to work.
 

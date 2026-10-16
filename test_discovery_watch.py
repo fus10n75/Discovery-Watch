@@ -46,6 +46,9 @@ from discovery_watch import (App, AlertPopup, Monitor, classify, detect_anomalie
                              popup_monitor_preference, save_popup_monitor_preference,
                              popup_appearance_preferences, save_popup_appearance_preferences,
                              POPUP_POSITION_CHOICES, POPUP_FONT_CHOICES,
+                             WINDOWS_POPUP_LAYOUT_CHOICES,
+                             windows_popup_layout_preference,
+                             save_windows_popup_layout_preference,
                              POPUP_MONITOR_CHOICES, WINDOWS_NOTIFICATION_MODES,
                              WINDOWS_DEFAULT_NOTIFICATION_MODE, POPUP_TEST_SCENARIOS,
                              windows_notification_mode_preference,
@@ -65,6 +68,7 @@ from discovery_watch import (App, AlertPopup, Monitor, classify, detect_anomalie
                              send_windows_notification, close_windows_notification,
                              _send_windows_shell_notification,
                              send_windows_overlay, decode_windows_overlay_payload,
+                             windows_overlay_dimensions,
                              windows_overlay_command,
                              reinforce_windows_popup, popup_work_area,
                              windows_work_area_to_tk, SCHEMA_VERSION,
@@ -80,7 +84,7 @@ from discovery_watch_core.exploration_criteria import gas_giant_bulk_density
 
 class DiscoveryWatchTests(unittest.TestCase):
     def test_v112_alert_levels_preferences_and_diagnostics(self):
-        self.assertEqual(APP_VERSION,'1.33.0')
+        self.assertEqual(APP_VERSION,'1.33.1')
         self.assertEqual(alert_level('MEGASHIP'),'Important')
         self.assertEqual(alert_level('ANOMALY_ALERT'),'Review')
         self.assertEqual(alert_level('UNIDENTIFIED_SIGNAL'),'Informational')
@@ -108,7 +112,7 @@ class DiscoveryWatchTests(unittest.TestCase):
                 self.assertEqual((summary['findings'],summary['unresolved']),(2,1))
                 report=monitor.diagnostic_report()
                 encoded=json.dumps(report)
-                self.assertEqual(report['application']['version'],'1.33.0')
+                self.assertEqual(report['application']['version'],'1.33.1')
                 self.assertNotIn('must-not-leak',encoded)
                 self.assertEqual(report['database']['row_counts']['alerts'],2)
 
@@ -1881,6 +1885,7 @@ class Version1230WindowsNotificationModeTests(unittest.TestCase):
         self.assertEqual(payload['monitor'],'primary')
         self.assertEqual(payload['position'],'Bottom right')
         self.assertEqual(payload['font_size'],'Normal')
+        self.assertEqual(payload['layout'],'Standard')
         self.assertIn('Installation detected',payload['body'])
         self.assertIn('creationflags',kwargs)
 
@@ -3389,3 +3394,32 @@ class Version1330PublicBetaFoundationTests(unittest.TestCase):
 
     def test_popup_size_choices_are_stable(self):
         self.assertEqual(POPUP_FONT_CHOICES,('Small','Normal','Large'))
+
+
+class Version1331WindowsPopupLayoutTests(unittest.TestCase):
+    def test_windows_layout_preference_defaults_and_persists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path=Path(directory)/'preferences.sqlite3'
+            self.assertEqual(windows_popup_layout_preference(db_path),'Standard')
+            save_windows_popup_layout_preference('Fit content',db_path)
+            self.assertEqual(windows_popup_layout_preference(db_path),'Fit content')
+            with self.assertRaises(ValueError):
+                save_windows_popup_layout_preference('Tiny',db_path)
+
+    def test_fit_content_and_compact_reduce_short_windows_overlay(self):
+        title='Discovery Watch'
+        body='Megaship - Generation Ship Artemis'
+        standard=windows_overlay_dimensions(title,body,'Normal','Standard')
+        compact=windows_overlay_dimensions(title,body,'Normal','Compact')
+        fitted=windows_overlay_dimensions(title,body,'Normal','Fit content')
+        self.assertLess(compact[0],standard[0])
+        self.assertLess(compact[1],standard[1])
+        self.assertLess(fitted[0],standard[0])
+        self.assertLess(fitted[1],standard[1])
+
+    def test_windows_layout_choices_and_bounds(self):
+        self.assertEqual(WINDOWS_POPUP_LAYOUT_CHOICES,('Compact','Standard','Fit content'))
+        width,height=windows_overlay_dimensions('Title','\n'.join(['Long line '*20]*20),
+                                                'Large','Fit content')
+        self.assertLessEqual(width,620)
+        self.assertLessEqual(height,340)

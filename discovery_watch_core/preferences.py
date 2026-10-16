@@ -9,6 +9,7 @@ from .config import (
     POPUP_MONITOR_VALUES,
     POPUP_POSITION_CHOICES,
     POPUP_FONT_CHOICES,
+    WINDOWS_POPUP_LAYOUT_CHOICES,
     POPUP_TIMEOUT_CHOICES,
     WINDOWS_NOTIFICATION_MODES,
 )
@@ -29,6 +30,7 @@ __all__ = (
     'save_popup_sound_preference', 'popup_monitor_preference',
     'save_popup_monitor_preference', 'windows_notification_mode_preference',
     'popup_appearance_preferences', 'save_popup_appearance_preferences',
+    'windows_popup_layout_preference', 'save_windows_popup_layout_preference',
     'save_windows_notification_mode_preference',
     'known_poi_arrival_preference', 'save_known_poi_arrival_preference',
     'arrival_discovery_status_preference',
@@ -301,6 +303,25 @@ def save_popup_appearance_preferences(position,font_size,db_path=DB_PATH):
         db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
         db.execute("INSERT OR REPLACE INTO preferences(key,value) VALUES('popup_position',?)",(position,))
         db.execute("INSERT OR REPLACE INTO preferences(key,value) VALUES('popup_font_size',?)",(font_size,))
+
+
+def windows_popup_layout_preference(db_path=DB_PATH):
+    """Return the Windows overlay density without affecting Linux popups."""
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    with _preference_connection(db_path) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        db.execute("INSERT OR IGNORE INTO preferences(key,value) VALUES('windows_popup_layout','Standard')")
+        value=db.execute("SELECT value FROM preferences WHERE key='windows_popup_layout'").fetchone()[0]
+    return value if value in WINDOWS_POPUP_LAYOUT_CHOICES else 'Standard'
+
+
+def save_windows_popup_layout_preference(choice,db_path=DB_PATH):
+    if choice not in WINDOWS_POPUP_LAYOUT_CHOICES:
+        raise ValueError('Unknown Windows popup layout')
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    with _preference_connection(db_path) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        db.execute("INSERT OR REPLACE INTO preferences(key,value) VALUES('windows_popup_layout',?)",(choice,))
 
 
 def windows_notification_mode_preference(db_path=DB_PATH):

@@ -482,7 +482,8 @@ def send_windows_notification(findings,metadata=None,timeout=15,widget=None):
 
 
 def send_windows_overlay(widget,findings,metadata=None,timeout=15,monitor_choice='Main monitor',
-                         user32=None,popen_factory=None,position='Bottom right',font_size='Normal'):
+                         user32=None,popen_factory=None,position='Bottom right',font_size='Normal',
+                         layout='Standard'):
     """Launch the native overlay in an isolated process so Tk cannot affect focus."""
     if platform.system()!='Windows':
         return False
@@ -495,7 +496,7 @@ def send_windows_overlay(widget,findings,metadata=None,timeout=15,monitor_choice
         payload={'title':title,'body':body[:900],
                  'timeout':max(5,min(60,int(timeout or 15))),
                  'monitor':POPUP_MONITOR_VALUES.get(monitor_choice,'primary'),
-                 'position':position,'font_size':font_size,
+                 'position':position,'font_size':font_size,'layout':layout,
                  'owner':owner}
         encoded=base64.urlsafe_b64encode(json.dumps(payload,ensure_ascii=True).encode('ascii')).decode('ascii')
         popen_factory(windows_overlay_command(encoded),
@@ -518,6 +519,25 @@ def windows_overlay_command(encoded,executable=None,script_path=None,frozen=None
 
 def decode_windows_overlay_payload(encoded):
     return json.loads(base64.urlsafe_b64decode(str(encoded).encode('ascii')).decode('ascii'))
+
+
+def windows_overlay_dimensions(title,body,font_size='Normal',layout='Standard'):
+    """Size the native Windows overlay while keeping it within useful limits."""
+    scale=POPUP_FONT_SCALES.get(str(font_size or 'Normal'),1.0)
+    lines=[line for line in str(body or '').splitlines() if line.strip()] or ['']
+    line_count=max(1,min(8,len(lines)))
+    if layout=='Compact':
+        width=int(500*scale)
+        height=int((118+line_count*22)*scale)
+        return max(410,min(600,width)),max(155,min(300,height))
+    if layout=='Fit content':
+        longest=max([len(str(title or '')),*[len(line) for line in lines]])
+        width=int((100+min(54,longest)*8.2)*scale)
+        height=int((112+line_count*24)*scale)
+        return max(360,min(620,width)),max(160,min(340,height))
+    width=int(620*scale)
+    height=int((135+line_count*28)*scale)
+    return max(500,min(744,width)),max(190,min(360,height))
 
 
 def record_windows_overlay_error(error):
@@ -605,8 +625,8 @@ def run_windows_overlay(payload):
         body=str(payload.get('body') or 'New discovery alert')
         timeout=max(5,min(60,int(payload.get('timeout') or 15)))
         scale=POPUP_FONT_SCALES.get(str(payload.get('font_size') or 'Normal'),1.0)
-        width=int(620*scale); lines=max(1,min(8,len(body.splitlines())))
-        height=max(190,min(360,135+lines*28))
+        width,height=windows_overlay_dimensions(title,body,payload.get('font_size'),
+                                                payload.get('layout'))
         def rgb(red,green,blue): return red | (green<<8) | (blue<<16)
         @WNDPROC
         def window_proc(hwnd,message,wparam,lparam):
@@ -2811,6 +2831,7 @@ class Monitor:
                           else WINDOWS_NOTIFICATION_MODES[0]))
         popup_info['position']=preferences.get('popup_position','Bottom right')
         popup_info['text_size']=preferences.get('popup_font_size','Normal')
+        popup_info['windows_layout']=preferences.get('windows_popup_layout','Standard')
         decision_counts=dict(self.db.execute('''SELECT COALESCE(popup_decision,'Legacy / unknown'),COUNT(*)
             FROM alerts GROUP BY COALESCE(popup_decision,'Legacy / unknown') ORDER BY COUNT(*) DESC''').fetchall())
         journals=[]
@@ -3316,6 +3337,7 @@ class App(tk.Tk):
         popup_position_choice,popup_font_choice=popup_appearance_preferences()
         self.popup_position_choice=tk.StringVar(value=popup_position_choice)
         self.popup_font_choice=tk.StringVar(value=popup_font_choice)
+        self.windows_popup_layout=tk.StringVar(value=windows_popup_layout_preference())
         self.windows_notification_mode=tk.StringVar(value=windows_notification_mode_preference())
         self.popup_test_choice=tk.StringVar(value=POPUP_TEST_SCENARIOS[0])
         detect_megaships,detect_installations,detect_unresolved=detection_preferences()
@@ -3693,6 +3715,18 @@ class App(tk.Tk):
             ttk.Label(notifications,text=('Wayland native notifications use the desktop notification position; '
                                           'text size is also desktop controlled.'),
                       wraplength=700).pack(anchor='w',pady=(0,4))
+        windows_layout_row=ttk.Frame(notifications); windows_layout_row.pack(anchor='w',fill='x',pady=2)
+        ttk.Label(windows_layout_row,text='Windows popup layout:').pack(side='left')
+        windows_layout_box=ttk.Combobox(windows_layout_row,textvariable=self.windows_popup_layout,
+                                        values=WINDOWS_POPUP_LAYOUT_CHOICES,state='readonly',width=14)
+        windows_layout_box.pack(side='left',padx=4)
+        windows_layout_box.bind('<<ComboboxSelected>>',
+                                lambda _event:self.save_windows_popup_layout_setting())
+        if platform.system()!='Windows':
+            windows_layout_box.configure(state='disabled')
+        ttk.Label(notifications,text=('Windows only: Compact reduces padding, Standard preserves the current size, '
+                                      'and Fit content shrinks short notifications automatically.'),
+                  wraplength=750).pack(anchor='w',pady=(0,4))
         timeout_row=ttk.Frame(notifications); timeout_row.pack(anchor='w',pady=2)
         ttk.Label(timeout_row,text='Popup timeout:').pack(side='left')
         timeout_box=ttk.Combobox(timeout_row,textvariable=self.popup_timeout,state='readonly',width=5,
@@ -4560,6 +4594,12 @@ class App(tk.Tk):
         except (sqlite3.Error,ValueError) as exc:
             messagebox.showerror('Setting not saved',str(exc))
 
+    def save_windows_popup_layout_setting(self):
+        try:
+            save_windows_popup_layout_preference(self.windows_popup_layout.get())
+        except (sqlite3.Error,ValueError) as exc:
+            messagebox.showerror('Setting not saved',str(exc))
+
     def save_windows_notification_mode_setting(self):
         try:
             save_windows_notification_mode_preference(self.windows_notification_mode.get())
@@ -4578,7 +4618,8 @@ class App(tk.Tk):
             return True
         item=self.windows_overlay_queue.popleft()
         shown=send_windows_overlay(self,item['findings'],item['metadata'],item['timeout'],
-                                   item['monitor'],position=item['position'],font_size=item['font_size'])
+                                   item['monitor'],position=item['position'],font_size=item['font_size'],
+                                   layout=item['layout'])
         if not shown:
             if fallback_on_failure:
                 error=windows_overlay_error_details()['message']
@@ -4607,6 +4648,7 @@ class App(tk.Tk):
         duration=max(5,min(60,int(timeout or 15)))
         position_var=self.__dict__.get('popup_position_choice')
         font_var=self.__dict__.get('popup_font_choice')
+        layout_var=self.__dict__.get('windows_popup_layout')
         self.windows_overlay_queue.append({
             'findings':list(findings),
             'metadata':list(metadata or []),
@@ -4614,6 +4656,7 @@ class App(tk.Tk):
             'monitor':monitor,
             'position':position_var.get() if position_var else 'Bottom right',
             'font_size':font_var.get() if font_var else 'Normal',
+            'layout':layout_var.get() if layout_var else 'Standard',
             'source':source,
         })
         if self.windows_overlay_active:
