@@ -47,8 +47,11 @@ from discovery_watch import (App, AlertPopup, Monitor, classify, detect_anomalie
                              popup_appearance_preferences, save_popup_appearance_preferences,
                              POPUP_POSITION_CHOICES, POPUP_FONT_CHOICES,
                              WINDOWS_POPUP_LAYOUT_CHOICES,
+                             WINDOWS_POPUP_FLOW_CHOICES,
                              windows_popup_layout_preference,
                              save_windows_popup_layout_preference,
+                             windows_popup_flow_preference,
+                             save_windows_popup_flow_preference,
                              POPUP_MONITOR_CHOICES, WINDOWS_NOTIFICATION_MODES,
                              WINDOWS_DEFAULT_NOTIFICATION_MODE, POPUP_TEST_SCENARIOS,
                              windows_notification_mode_preference,
@@ -69,6 +72,7 @@ from discovery_watch import (App, AlertPopup, Monitor, classify, detect_anomalie
                              _send_windows_shell_notification,
                              send_windows_overlay, decode_windows_overlay_payload,
                              windows_overlay_dimensions,
+                             windows_cascade_position,
                              windows_overlay_command,
                              reinforce_windows_popup, popup_work_area,
                              windows_work_area_to_tk, SCHEMA_VERSION,
@@ -84,7 +88,7 @@ from discovery_watch_core.exploration_criteria import gas_giant_bulk_density
 
 class DiscoveryWatchTests(unittest.TestCase):
     def test_v112_alert_levels_preferences_and_diagnostics(self):
-        self.assertEqual(APP_VERSION,'1.33.1')
+        self.assertEqual(APP_VERSION,'1.33.3')
         self.assertEqual(alert_level('MEGASHIP'),'Important')
         self.assertEqual(alert_level('ANOMALY_ALERT'),'Review')
         self.assertEqual(alert_level('UNIDENTIFIED_SIGNAL'),'Informational')
@@ -112,7 +116,7 @@ class DiscoveryWatchTests(unittest.TestCase):
                 self.assertEqual((summary['findings'],summary['unresolved']),(2,1))
                 report=monitor.diagnostic_report()
                 encoded=json.dumps(report)
-                self.assertEqual(report['application']['version'],'1.33.1')
+                self.assertEqual(report['application']['version'],'1.33.3')
                 self.assertNotIn('must-not-leak',encoded)
                 self.assertEqual(report['database']['row_counts']['alerts'],2)
 
@@ -3422,4 +3426,71 @@ class Version1331WindowsPopupLayoutTests(unittest.TestCase):
         width,height=windows_overlay_dimensions('Title','\n'.join(['Long line '*20]*20),
                                                 'Large','Fit content')
         self.assertLessEqual(width,620)
-        self.assertLessEqual(height,340)
+        self.assertLessEqual(height,420)
+
+
+class Version1332WindowsPopupCascadeTests(unittest.TestCase):
+    def test_windows_popup_flow_defaults_and_persists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path=Path(directory)/'preferences.sqlite3'
+            self.assertEqual(windows_popup_flow_preference(db_path),'Sequential queue')
+            save_windows_popup_flow_preference('Cascaded stack',db_path)
+            self.assertEqual(windows_popup_flow_preference(db_path),'Cascaded stack')
+            with self.assertRaises(ValueError):
+                save_windows_popup_flow_preference('Overlap everything',db_path)
+
+    def test_cascade_cells_do_not_overlap_on_common_display(self):
+        area=(0,0,1920,1080); size=(600,250)
+        bottom=[windows_cascade_position(area,size,'Bottom right',slot) for slot in range(3)]
+        top=[windows_cascade_position(area,size,'Top left',slot) for slot in range(3)]
+        self.assertGreater(bottom[0][1],bottom[1][1])
+        self.assertGreater(bottom[1][1],bottom[2][1])
+        self.assertLessEqual(bottom[1][1]+bottom[1][3],bottom[0][1])
+        self.assertLess(top[0][1],top[1][1])
+        self.assertLessEqual(top[0][1]+top[0][3],top[1][1])
+
+    def test_cascade_shows_three_and_queues_the_fourth(self):
+        class Value:
+            def __init__(self,value): self.value=value
+            def get(self): return self.value
+        class Status:
+            def set(self,_value): pass
+        app=App.__new__(App)
+        app.windows_overlay_queue=deque(); app.windows_overlay_slots={}
+        app.windows_overlay_active=False; app.windows_overlay_timer=None
+        app.windows_popup_flow=Value('Cascaded stack')
+        app.popup_sound=Value(False); app.status=Status()
+        app._audit_popup_delivery=lambda *args,**kwargs: None
+        scheduled=[]
+        app.after=lambda delay,callback: scheduled.append((delay,callback)) or len(scheduled)
+        with patch('discovery_watch.send_windows_overlay',return_value=True) as send:
+            for index in range(4):
+                self.assertTrue(app._queue_windows_overlay(
+                    [(f'Finding {index}','Stack System','detail')],[],5,'Main monitor','Live journal'))
+            self.assertEqual(send.call_count,3)
+            self.assertEqual(len(app.windows_overlay_slots),3)
+            self.assertEqual(len(app.windows_overlay_queue),1)
+            self.assertEqual([call.kwargs['stack_slot'] for call in send.call_args_list],[0,1,2])
+            scheduled[0][1]()
+            self.assertEqual(send.call_count,4)
+            self.assertEqual(send.call_args.kwargs['stack_slot'],0)
+            self.assertEqual(len(app.windows_overlay_queue),0)
+
+    def test_windows_popup_flow_choices_are_stable(self):
+        self.assertEqual(WINDOWS_POPUP_FLOW_CHOICES,('Sequential queue','Cascaded stack'))
+
+
+class Version1333WindowsPopupWrappingTests(unittest.TestCase):
+    def test_compact_and_fit_content_allow_for_wrapped_details(self):
+        short='Megaship - Artemis'
+        long=('Possible discovery - this explanatory detail is deliberately long enough to wrap '
+              'onto several rendered lines in the native Windows overlay without explicit newlines. ')*2
+        for layout in ('Compact','Fit content'):
+            short_size=windows_overlay_dimensions('Discovery Watch',short,'Normal',layout)
+            long_size=windows_overlay_dimensions('Discovery Watch',long,'Normal',layout)
+            self.assertGreater(long_size[1],short_size[1])
+            self.assertLessEqual(long_size[1],420)
+
+    def test_cascade_position_never_shrinks_overlay_content_height(self):
+        positioned=windows_cascade_position((0,0,1366,768),(500,300),'Bottom right',1)
+        self.assertEqual(positioned[2:],(500,300))

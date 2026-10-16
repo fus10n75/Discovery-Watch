@@ -10,6 +10,7 @@ from .config import (
     POPUP_POSITION_CHOICES,
     POPUP_FONT_CHOICES,
     WINDOWS_POPUP_LAYOUT_CHOICES,
+    WINDOWS_POPUP_FLOW_CHOICES,
     POPUP_TIMEOUT_CHOICES,
     WINDOWS_NOTIFICATION_MODES,
 )
@@ -31,6 +32,7 @@ __all__ = (
     'save_popup_monitor_preference', 'windows_notification_mode_preference',
     'popup_appearance_preferences', 'save_popup_appearance_preferences',
     'windows_popup_layout_preference', 'save_windows_popup_layout_preference',
+    'windows_popup_flow_preference', 'save_windows_popup_flow_preference',
     'save_windows_notification_mode_preference',
     'known_poi_arrival_preference', 'save_known_poi_arrival_preference',
     'arrival_discovery_status_preference',
@@ -322,6 +324,25 @@ def save_windows_popup_layout_preference(choice,db_path=DB_PATH):
     with _preference_connection(db_path) as db:
         db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
         db.execute("INSERT OR REPLACE INTO preferences(key,value) VALUES('windows_popup_layout',?)",(choice,))
+
+
+def windows_popup_flow_preference(db_path=DB_PATH):
+    """Return whether Windows overlays are sequential or visibly cascaded."""
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    with _preference_connection(db_path) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        db.execute("INSERT OR IGNORE INTO preferences(key,value) VALUES('windows_popup_flow','Sequential queue')")
+        value=db.execute("SELECT value FROM preferences WHERE key='windows_popup_flow'").fetchone()[0]
+    return value if value in WINDOWS_POPUP_FLOW_CHOICES else 'Sequential queue'
+
+
+def save_windows_popup_flow_preference(choice,db_path=DB_PATH):
+    if choice not in WINDOWS_POPUP_FLOW_CHOICES:
+        raise ValueError('Unknown Windows popup flow')
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    with _preference_connection(db_path) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        db.execute("INSERT OR REPLACE INTO preferences(key,value) VALUES('windows_popup_flow',?)",(choice,))
 
 
 def windows_notification_mode_preference(db_path=DB_PATH):

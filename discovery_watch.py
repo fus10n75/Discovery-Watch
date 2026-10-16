@@ -483,7 +483,7 @@ def send_windows_notification(findings,metadata=None,timeout=15,widget=None):
 
 def send_windows_overlay(widget,findings,metadata=None,timeout=15,monitor_choice='Main monitor',
                          user32=None,popen_factory=None,position='Bottom right',font_size='Normal',
-                         layout='Standard'):
+                         layout='Standard',stack_slot=None):
     """Launch the native overlay in an isolated process so Tk cannot affect focus."""
     if platform.system()!='Windows':
         return False
@@ -497,6 +497,7 @@ def send_windows_overlay(widget,findings,metadata=None,timeout=15,monitor_choice
                  'timeout':max(5,min(60,int(timeout or 15))),
                  'monitor':POPUP_MONITOR_VALUES.get(monitor_choice,'primary'),
                  'position':position,'font_size':font_size,'layout':layout,
+                 'stack_slot':stack_slot,
                  'owner':owner}
         encoded=base64.urlsafe_b64encode(json.dumps(payload,ensure_ascii=True).encode('ascii')).decode('ascii')
         popen_factory(windows_overlay_command(encoded),
@@ -522,22 +523,43 @@ def decode_windows_overlay_payload(encoded):
 
 
 def windows_overlay_dimensions(title,body,font_size='Normal',layout='Standard'):
-    """Size the native Windows overlay while keeping it within useful limits."""
+    """Size the native overlay from rendered wrapping, not newline count alone."""
     scale=POPUP_FONT_SCALES.get(str(font_size or 'Normal'),1.0)
     lines=[line for line in str(body or '').splitlines() if line.strip()] or ['']
-    line_count=max(1,min(8,len(lines)))
     if layout=='Compact':
-        width=int(500*scale)
-        height=int((118+line_count*22)*scale)
-        return max(410,min(600,width)),max(155,min(300,height))
-    if layout=='Fit content':
+        width=max(410,min(600,int(500*scale)))
+    elif layout=='Fit content':
         longest=max([len(str(title or '')),*[len(line) for line in lines]])
-        width=int((100+min(54,longest)*8.2)*scale)
-        height=int((112+line_count*24)*scale)
-        return max(360,min(620,width)),max(160,min(340,height))
-    width=int(620*scale)
-    height=int((135+line_count*28)*scale)
-    return max(500,min(744,width)),max(190,min(360,height))
+        width=max(360,min(620,int((100+min(54,longest)*8.2)*scale)))
+    else:
+        width=max(500,min(744,int(620*scale)))
+    # DrawTextW word-wraps after sizing. Estimate those visual lines using the
+    # actual content width and font scale so Compact/Fit content cannot clip a
+    # long line that contains no explicit newline.
+    average_character=max(6.5,9.0*scale)
+    characters_per_line=max(18,int((width-50)/average_character))
+    wrapped_lines=sum(max(1,(len(line)+characters_per_line-1)//characters_per_line)
+                      for line in lines)
+    wrapped_lines=max(1,min(12,wrapped_lines))
+    line_height=max(20,int(round(24*scale)))
+    height=108+(wrapped_lines*line_height)
+    minimum=170 if layout in ('Compact','Fit content') else 190
+    return width,max(minimum,min(420,height))
+
+
+def windows_cascade_position(area,size,choice,slot,max_slots=3,gap=12):
+    """Place one overlay in a stable monitor cell without overlapping siblings."""
+    left,top,right,bottom=area
+    width,height=size
+    slot=max(0,min(max_slots-1,int(slot or 0)))
+    height=max(1,int(height))
+    x,_=popup_position(area,width,height,'Windows',choice)
+    if 'bottom' in str(choice).casefold():
+        y=bottom-POPUP_EDGE_MARGIN-height-(slot*(height+gap))
+    else:
+        y=top+POPUP_EDGE_MARGIN+(slot*(height+gap))
+    y=max(top+POPUP_EDGE_MARGIN,min(y,bottom-height-POPUP_EDGE_MARGIN))
+    return x,y,width,height
 
 
 def record_windows_overlay_error(error):
@@ -647,7 +669,7 @@ def run_windows_overlay(payload):
                 user32.DrawTextW(hdc,title,-1,ctypes.byref(heading),0x20|0x0800|0x8000)
                 body_font=gdi32.CreateFontW(-int(18*scale),0,0,0,400,0,0,0,1,0,0,5,0,'Segoe UI')
                 gdi32.SelectObject(hdc,body_font); gdi32.SetTextColor(hdc,rgb(117,215,240))
-                body_rect=wintypes.RECT(25,83,width-25,height-38)
+                body_rect=wintypes.RECT(25,83,width-25,height-20)
                 user32.DrawTextW(hdc,body,-1,ctypes.byref(body_rect),0x10|0x0800|0x8000)
                 gdi32.SelectObject(hdc,old)
                 for font in (label_font,heading_font,body_font): gdi32.DeleteObject(font)
@@ -675,8 +697,13 @@ def run_windows_overlay(payload):
         info_type=_windows_monitor_info_type(); info=info_type(); info.cbSize=ctypes.sizeof(info)
         user32.GetMonitorInfoW.argtypes=(ctypes.c_void_p,ctypes.POINTER(info_type))
         if not (monitor and user32.GetMonitorInfoW(monitor,ctypes.byref(info))): return 1
-        x,y=popup_position((info.rcWork.left,info.rcWork.top,info.rcWork.right,info.rcWork.bottom),
-                           width,height,'Windows',str(payload.get('position') or 'Bottom right'))
+        area=(info.rcWork.left,info.rcWork.top,info.rcWork.right,info.rcWork.bottom)
+        choice=str(payload.get('position') or 'Bottom right')
+        stack_slot=payload.get('stack_slot')
+        if stack_slot is None:
+            x,y=popup_position(area,width,height,'Windows',choice)
+        else:
+            x,y,width,height=windows_cascade_position(area,(width,height),choice,stack_slot)
         ex_style=0x00000008|0x00000020|0x00000080|0x00080000|0x08000000
         hwnd=user32.CreateWindowExW(ex_style,class_name,'Discovery Watch',0x80000000,
                                     x,y,width,height,None,None,instance,None)
@@ -2832,6 +2859,7 @@ class Monitor:
         popup_info['position']=preferences.get('popup_position','Bottom right')
         popup_info['text_size']=preferences.get('popup_font_size','Normal')
         popup_info['windows_layout']=preferences.get('windows_popup_layout','Standard')
+        popup_info['windows_multiple_popups']=preferences.get('windows_popup_flow','Sequential queue')
         decision_counts=dict(self.db.execute('''SELECT COALESCE(popup_decision,'Legacy / unknown'),COUNT(*)
             FROM alerts GROUP BY COALESCE(popup_decision,'Legacy / unknown') ORDER BY COUNT(*) DESC''').fetchall())
         journals=[]
@@ -3323,6 +3351,7 @@ class App(tk.Tk):
         self.windows_overlay_queue=deque()
         self.windows_overlay_active=False
         self.windows_overlay_timer=None
+        self.windows_overlay_slots={}
         saved_folder,auto_start,popup_auto_close,popup_timeout=interface_preferences()
         saved_path=Path(saved_folder).expanduser() if saved_folder else None
         self.saved_folder_unavailable=bool(saved_path and not saved_path.is_dir())
@@ -3338,6 +3367,7 @@ class App(tk.Tk):
         self.popup_position_choice=tk.StringVar(value=popup_position_choice)
         self.popup_font_choice=tk.StringVar(value=popup_font_choice)
         self.windows_popup_layout=tk.StringVar(value=windows_popup_layout_preference())
+        self.windows_popup_flow=tk.StringVar(value=windows_popup_flow_preference())
         self.windows_notification_mode=tk.StringVar(value=windows_notification_mode_preference())
         self.popup_test_choice=tk.StringVar(value=POPUP_TEST_SCENARIOS[0])
         detect_megaships,detect_installations,detect_unresolved=detection_preferences()
@@ -3726,6 +3756,18 @@ class App(tk.Tk):
             windows_layout_box.configure(state='disabled')
         ttk.Label(notifications,text=('Windows only: Compact reduces padding, Standard preserves the current size, '
                                       'and Fit content shrinks short notifications automatically.'),
+                  wraplength=750).pack(anchor='w',pady=(0,4))
+        windows_flow_row=ttk.Frame(notifications); windows_flow_row.pack(anchor='w',fill='x',pady=2)
+        ttk.Label(windows_flow_row,text='Windows multiple popups:').pack(side='left')
+        windows_flow_box=ttk.Combobox(windows_flow_row,textvariable=self.windows_popup_flow,
+                                      values=WINDOWS_POPUP_FLOW_CHOICES,state='readonly',width=18)
+        windows_flow_box.pack(side='left',padx=4)
+        windows_flow_box.bind('<<ComboboxSelected>>',
+                              lambda _event:self.save_windows_popup_flow_setting())
+        if platform.system()!='Windows':
+            windows_flow_box.configure(state='disabled')
+        ttk.Label(notifications,text=('Cascaded stack shows up to three overlays together; additional alerts wait '
+                                      'until a visible slot becomes available.'),
                   wraplength=750).pack(anchor='w',pady=(0,4))
         timeout_row=ttk.Frame(notifications); timeout_row.pack(anchor='w',pady=2)
         ttk.Label(timeout_row,text='Popup timeout:').pack(side='left')
@@ -4600,6 +4642,12 @@ class App(tk.Tk):
         except (sqlite3.Error,ValueError) as exc:
             messagebox.showerror('Setting not saved',str(exc))
 
+    def save_windows_popup_flow_setting(self):
+        try:
+            save_windows_popup_flow_preference(self.windows_popup_flow.get())
+        except (sqlite3.Error,ValueError) as exc:
+            messagebox.showerror('Setting not saved',str(exc))
+
     def save_windows_notification_mode_setting(self):
         try:
             save_windows_notification_mode_preference(self.windows_notification_mode.get())
@@ -4613,7 +4661,51 @@ class App(tk.Tk):
             pass
 
     def _start_next_windows_overlay(self,fallback_on_failure=False):
-        """Launch one queued overlay and wait for its lifetime before the next."""
+        """Launch queued overlays sequentially or into three non-overlapping cells."""
+        flow_var=self.__dict__.get('windows_popup_flow')
+        cascaded=bool(flow_var and flow_var.get()=='Cascaded stack')
+        slots=self.__dict__.setdefault('windows_overlay_slots',{})
+        if cascaded:
+            launched=False
+            while self.windows_overlay_queue:
+                item=self.windows_overlay_queue[0]
+                overlay_title,overlay_body=native_notification_payload(item['findings'],item['metadata'])
+                _width,estimated_height=windows_overlay_dimensions(
+                    overlay_title,overlay_body,item['font_size'],item['layout'])
+                capacity=3 if estimated_height<=300 else 2
+                available=[index for index in range(capacity) if index not in slots]
+                if not available:
+                    break
+                slot=available[0]
+                item=self.windows_overlay_queue.popleft()
+                shown=send_windows_overlay(
+                    self,item['findings'],item['metadata'],item['timeout'],item['monitor'],
+                    position=item['position'],font_size=item['font_size'],layout=item['layout'],
+                    stack_slot=slot)
+                if not shown:
+                    if fallback_on_failure:
+                        error=windows_overlay_error_details()['message']
+                        self._audit_popup_delivery('Windows game overlay','failed',item['findings'],
+                                                   item['source'],error)
+                        self.show_alert_popup(item['findings'],item['metadata'],item['source'],
+                                              allow_windows_overlay=False)
+                    continue
+                launched=True
+                if self.popup_sound.get():
+                    play_alert_sound(self)
+                self._audit_popup_delivery('Windows game overlay','launched',item['findings'],
+                                           item['source'],f'Cascaded slot {slot+1} of {capacity}')
+                delay_ms=(item['timeout']*1000)+350
+                slots[slot]=self.after(delay_ms,lambda index=slot:self._finish_windows_overlay(index))
+            if launched:
+                waiting=len(self.windows_overlay_queue)
+                self.status.set('Windows popup stack displayed without taking focus from Elite.' +
+                                (f' {waiting} alert(s) waiting.' if waiting else ''))
+                return True
+            if self.windows_overlay_queue and slots:
+                self.status.set(f'{len(self.windows_overlay_queue)} discovery alert(s) waiting for a Windows popup slot.')
+                return True
+            return not self.windows_overlay_queue
         if self.windows_overlay_active or not self.windows_overlay_queue:
             return True
         item=self.windows_overlay_queue.popleft()
@@ -4638,7 +4730,11 @@ class App(tk.Tk):
         self.windows_overlay_timer=self.after(delay_ms,self._finish_windows_overlay)
         return True
 
-    def _finish_windows_overlay(self):
+    def _finish_windows_overlay(self,slot=None):
+        if slot is not None:
+            self.__dict__.setdefault('windows_overlay_slots',{}).pop(slot,None)
+            self._start_next_windows_overlay(True)
+            return
         self.windows_overlay_active=False
         self.windows_overlay_timer=None
         self._start_next_windows_overlay(True)
@@ -4649,6 +4745,7 @@ class App(tk.Tk):
         position_var=self.__dict__.get('popup_position_choice')
         font_var=self.__dict__.get('popup_font_choice')
         layout_var=self.__dict__.get('windows_popup_layout')
+        flow_var=self.__dict__.get('windows_popup_flow')
         self.windows_overlay_queue.append({
             'findings':list(findings),
             'metadata':list(metadata or []),
@@ -4659,6 +4756,8 @@ class App(tk.Tk):
             'layout':layout_var.get() if layout_var else 'Standard',
             'source':source,
         })
+        if flow_var and flow_var.get()=='Cascaded stack':
+            return self._start_next_windows_overlay(False)
         if self.windows_overlay_active:
             self.status.set('Discovery alert queued behind the current Windows overlay.')
             return True
