@@ -38,7 +38,7 @@ commander to decide what matters to them.
 
 Discovery Watch includes:
 
-- Clear popup notifications with selectable position and text size
+- Clear popup notifications with selectable position and text size(windows and x11)
 - Compact and content-fitting Windows overlay layouts
 - Optional cascaded Windows alerts that do not take control away from the game
 - Discovery History with search, notes and evidence review
