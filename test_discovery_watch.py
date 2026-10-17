@@ -45,7 +45,7 @@ from discovery_watch import (App, AlertPopup, Monitor, classify, detect_anomalie
                              popup_sound_preference, save_popup_sound_preference,
                              popup_monitor_preference, save_popup_monitor_preference,
                              popup_appearance_preferences, save_popup_appearance_preferences,
-                             POPUP_POSITION_CHOICES, POPUP_FONT_CHOICES,
+                             POPUP_POSITION_CHOICES, POPUP_FONT_CHOICES, POPUP_FONT_SCALES,
                              WINDOWS_POPUP_LAYOUT_CHOICES,
                              WINDOWS_POPUP_FLOW_CHOICES,
                              windows_popup_layout_preference,
@@ -88,7 +88,7 @@ from discovery_watch_core.exploration_criteria import gas_giant_bulk_density
 
 class DiscoveryWatchTests(unittest.TestCase):
     def test_v112_alert_levels_preferences_and_diagnostics(self):
-        self.assertEqual(APP_VERSION,'1.33.3')
+        self.assertEqual(APP_VERSION,'1.33.4')
         self.assertEqual(alert_level('MEGASHIP'),'Important')
         self.assertEqual(alert_level('ANOMALY_ALERT'),'Review')
         self.assertEqual(alert_level('UNIDENTIFIED_SIGNAL'),'Informational')
@@ -116,7 +116,7 @@ class DiscoveryWatchTests(unittest.TestCase):
                 self.assertEqual((summary['findings'],summary['unresolved']),(2,1))
                 report=monitor.diagnostic_report()
                 encoded=json.dumps(report)
-                self.assertEqual(report['application']['version'],'1.33.3')
+                self.assertEqual(report['application']['version'],'1.33.4')
                 self.assertNotIn('must-not-leak',encoded)
                 self.assertEqual(report['database']['row_counts']['alerts'],2)
 
@@ -3397,7 +3397,8 @@ class Version1330PublicBetaFoundationTests(unittest.TestCase):
             self.assertLessEqual(x+600,area[2]); self.assertLessEqual(y+300,area[3])
 
     def test_popup_size_choices_are_stable(self):
-        self.assertEqual(POPUP_FONT_CHOICES,('Small','Normal','Large'))
+        self.assertEqual(POPUP_FONT_CHOICES,('Smaller','Small','Normal','Large'))
+        self.assertLess(POPUP_FONT_SCALES['Smaller'],POPUP_FONT_SCALES['Small'])
 
 
 class Version1331WindowsPopupLayoutTests(unittest.TestCase):
@@ -3433,9 +3434,9 @@ class Version1332WindowsPopupCascadeTests(unittest.TestCase):
     def test_windows_popup_flow_defaults_and_persists(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path=Path(directory)/'preferences.sqlite3'
-            self.assertEqual(windows_popup_flow_preference(db_path),'Sequential queue')
-            save_windows_popup_flow_preference('Cascaded stack',db_path)
             self.assertEqual(windows_popup_flow_preference(db_path),'Cascaded stack')
+            save_windows_popup_flow_preference('Sequential queue',db_path)
+            self.assertEqual(windows_popup_flow_preference(db_path),'Sequential queue')
             with self.assertRaises(ValueError):
                 save_windows_popup_flow_preference('Overlap everything',db_path)
 

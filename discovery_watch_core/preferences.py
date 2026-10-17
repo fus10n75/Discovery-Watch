@@ -331,9 +331,9 @@ def windows_popup_flow_preference(db_path=DB_PATH):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     with _preference_connection(db_path) as db:
         db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
-        db.execute("INSERT OR IGNORE INTO preferences(key,value) VALUES('windows_popup_flow','Sequential queue')")
+        db.execute("INSERT OR IGNORE INTO preferences(key,value) VALUES('windows_popup_flow','Cascaded stack')")
         value=db.execute("SELECT value FROM preferences WHERE key='windows_popup_flow'").fetchone()[0]
-    return value if value in WINDOWS_POPUP_FLOW_CHOICES else 'Sequential queue'
+    return value if value in WINDOWS_POPUP_FLOW_CHOICES else 'Cascaded stack'
 
 
 def save_windows_popup_flow_preference(choice,db_path=DB_PATH):

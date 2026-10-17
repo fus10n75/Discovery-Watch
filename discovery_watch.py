@@ -2859,7 +2859,7 @@ class Monitor:
         popup_info['position']=preferences.get('popup_position','Bottom right')
         popup_info['text_size']=preferences.get('popup_font_size','Normal')
         popup_info['windows_layout']=preferences.get('windows_popup_layout','Standard')
-        popup_info['windows_multiple_popups']=preferences.get('windows_popup_flow','Sequential queue')
+        popup_info['windows_multiple_popups']=preferences.get('windows_popup_flow','Cascaded stack')
         decision_counts=dict(self.db.execute('''SELECT COALESCE(popup_decision,'Legacy / unknown'),COUNT(*)
             FROM alerts GROUP BY COALESCE(popup_decision,'Legacy / unknown') ORDER BY COUNT(*) DESC''').fetchall())
         journals=[]
@@ -3072,6 +3072,10 @@ class AlertPopup(tk.Toplevel):
         self.position=position
         self.font_scale=POPUP_FONT_SCALES.get(font_size,1.0)
         self.metadata=list(metadata or [])
+        # A popup may be created directly beneath a stationary pointer. Do not
+        # treat that as deliberate hovering and freeze its countdown forever.
+        self._pointer_interacted=False
+        self._initial_pointer=None
         self.compact_summary=bool(findings and self.metadata and
                                   all(item.get('compact_summary') for item in self.metadata))
         if platform.system()=='Linux':
@@ -3115,6 +3119,7 @@ class AlertPopup(tk.Toplevel):
         cards_scroll.pack(side='right',fill='y')
         self.cards_canvas.pack(side='left',fill='both',expand=True)
         cards=tk.Frame(self.cards_canvas,bg=self.BG)
+        self.cards_frame=cards
         self.cards_window=self.cards_canvas.create_window((0,0),window=cards,anchor='nw')
         cards.bind('<Configure>',self._update_cards_scrollregion)
         self.cards_canvas.bind('<Configure>',self._resize_cards_width)
@@ -3211,6 +3216,9 @@ class AlertPopup(tk.Toplevel):
         try:
             self.update_idletasks()
             left,top,right,bottom=popup_work_area(self.master,self.monitor_choice)
+            if platform.system()=='Linux':
+                self._fit_linux_content_height(max(240,(bottom-top)-80))
+            self._initial_pointer=(self.winfo_pointerx(),self.winfo_pointery())
             x,y=popup_position((left,top,right,bottom),self.winfo_width(),self.winfo_height(),
                                choice=self.position)
             self.geometry(f'{x:+d}{y:+d}')
@@ -3237,6 +3245,20 @@ class AlertPopup(tk.Toplevel):
                 self.after(300,self._release_topmost)
         except tk.TclError:
             pass
+
+    def _fit_linux_content_height(self,max_height):
+        """Shrink short custom Linux alerts while retaining scrolling for long ones."""
+        self.update_idletasks()
+        card_height=max(72,min(380,self.cards_frame.winfo_reqheight()))
+        self.cards_canvas.configure(height=card_height)
+        self.update_idletasks()
+        requested=self.winfo_reqheight()
+        if requested>max_height:
+            card_height=max(72,card_height-(requested-max_height))
+            self.cards_canvas.configure(height=card_height)
+            self.update_idletasks()
+            requested=self.winfo_reqheight()
+        self.geometry(f'600x{max(210,min(max_height,requested))}')
 
     def _reinforce_visibility(self):
         try:
@@ -3283,6 +3305,12 @@ class AlertPopup(tk.Toplevel):
 
     def _pointer_is_inside(self):
         try:
+            current=(self.winfo_pointerx(),self.winfo_pointery())
+            if self._initial_pointer is not None and not self._pointer_interacted:
+                if abs(current[0]-self._initial_pointer[0])+abs(current[1]-self._initial_pointer[1])>4:
+                    self._pointer_interacted=True
+            if not self._pointer_interacted:
+                return False
             widget=self.winfo_containing(self.winfo_pointerx(),self.winfo_pointery())
             return bool(widget and widget.winfo_toplevel()==self)
         except tk.TclError:
