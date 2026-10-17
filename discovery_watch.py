@@ -31,7 +31,7 @@ from discovery_watch_core.config import *
 
 from discovery_watch_core.detection import (
     alert_level, classify, detect_anomalies, discovery_facts, finding_type,
-    is_planetary_mining_signal, stratum_findings, surface_signal_findings,
+    biological_material_findings, is_planetary_mining_signal, stratum_findings, surface_signal_findings,
     surface_signal_observations,
 )
 from discovery_watch_core.exploration_criteria import EXPLORATION_CRITERIA
@@ -1300,6 +1300,16 @@ class Monitor:
                 self._upsert_case(system,address,body,'bio:stratum','Stratum Tectonicas',
                                   'Completed' if completed else 'Confirmed','Confirmed species',
                                   'Sampling complete.' if completed else 'Complete the remaining organic samples.',event)
+        for rule,_title,_detail in biological_material_findings(
+                event,self._system_scan_events(system,address or event.get('SystemAddress'))):
+            if rule=='BIO_BRAIN_TREE_CONFIRMED':
+                self._upsert_case(system,address,body,'bio:material','Brain Trees',
+                                  'Confirmed','Confirmed genus and material-bearing body',
+                                  'Land and investigate the Brain Tree sites for useful raw materials.',event)
+            else:
+                self._upsert_case(system,address,body,'bio:material','Biological material opportunity',
+                                  'Lead','Biological signals with Grade 3 or Grade 4 materials',
+                                  'Map and investigate the biological signals; Brain Trees are not confirmed.',event)
         if event.get('event')=='ScanOrganic':
             completed=str(event.get('ScanType') or '').casefold()=='analyse'
             species=str(event.get('Species_Localised') or event.get('Species') or 'Biological species')
@@ -2355,7 +2365,8 @@ class Monitor:
                 self.errors.append(f"Cannot initialise {file}: {exc}")
 
     def poll(self, options=(True, True, True, True, True, False, True, False,
-                            True, True, False, False, True, True, False, False, False)):
+                            True, True, False, False, True, True, False, False, False,
+                            True, False)):
         found = []
         self.popup_findings = []
         self.popup_metadata = []
@@ -2376,6 +2387,8 @@ class Monitor:
         stratum_popups_enabled=options[12] if len(options)>12 else True
         before_leave_enabled=options[13] if len(options)>13 else True
         arrival_discovery_status_enabled=options[16] if len(options)>16 else False
+        brain_tree_popups_enabled=options[17] if len(options)>17 else True
+        bio_material_candidate_popups_enabled=options[18] if len(options)>18 else False
         if not self.folder.is_dir():
             raise OSError(f'Journal folder unavailable: {self.folder}')
         for file in sorted(self.folder.glob('Journal.*.log')):
@@ -2583,6 +2596,9 @@ class Monitor:
                     else:
                         self.bio_confirmed_this_visit.add(bio_key)
                 event_findings.extend(bio_findings)
+                material_findings=biological_material_findings(
+                    event,self._system_scan_events(system,address or event.get('SystemAddress')))
+                event_findings.extend(material_findings)
                 popup_controls={
                     'Planetary Mining Locations':planetary_mining_popups_enabled,
                     'Thargoid surface signals':surface_popup_choices['thargoid'],
@@ -2692,6 +2708,9 @@ class Monitor:
                             if generic_popup: self.generic_popup_seen.add(popup_key)
                         surface_rule=rule in surface_popup_by_rule
                         bio_rule=rule in ('BIO_STRATUM_LEAD','BIO_STRATUM_TECTONICAS')
+                        bio_material_rule=rule in ('BIO_BRAIN_TREE_CONFIRMED','BIO_MATERIAL_CANDIDATE')
+                        bio_material_popup=(brain_tree_popups_enabled if rule=='BIO_BRAIN_TREE_CONFIRMED'
+                                            else bio_material_candidate_popups_enabled)
                         anomaly_rule=rule=='ANOMALY_ALERT'
                         discovery_status_rule=rule=='SYSTEM_DISCOVERY_STATUS'
                         discovery_status_popup=(discovery_status_rule and
@@ -2707,11 +2726,13 @@ class Monitor:
                         popup_allowed=(generic_popup or special_popup or discovery_status_popup or
                                        (surface_rule and surface_popup_by_rule[rule]) or
                                        (bio_rule and stratum_popups_enabled) or
+                                       (bio_material_rule and bio_material_popup) or
                                        (anomaly_rule and anomaly_alerts_enabled) or
                                        (watch_rule and watch_popup_by_rule[rule]) or
                                        signal_review_popup or
                                        (not generic_rule and not special_rule and not discovery_status_rule and
-                                        not surface_rule and not bio_rule and not anomaly_rule and not watch_rule and
+                                        not surface_rule and not bio_rule and not bio_material_rule and
+                                        not anomaly_rule and not watch_rule and
                                         (not signal_catalog_rule or not signal_row or bool(signal_row[4]))))
                         will_popup=popup_allowed and not suppress_planetary_mining_popup
                         surface_confirmation_suppressed=False
@@ -2732,7 +2753,12 @@ class Monitor:
                                 self.surface_alerted_this_visit.add(surface_key)
                         if will_popup:
                             self.popup_findings.append(finding)
-                            self.popup_metadata.append(popup_identity(event,title,rule))
+                            identity=popup_identity(event,title,rule)
+                            if bio_material_rule:
+                                marker='Potential raw engineering materials from the body scan: '
+                                if marker in detail:
+                                    identity['key_fact']=detail.split(marker,1)[1].split('. ',1)[0]
+                            self.popup_metadata.append(identity)
                         if suppress_planetary_mining_popup:
                             popup_decision='Suppressed: Planetary Mining Location popups are disabled'
                         elif will_popup:
@@ -2750,6 +2776,10 @@ class Monitor:
                                             'Saved without popup because this surface-signal category popup is disabled')
                         elif bio_rule:
                             popup_decision='Saved without popup because Stratum popups are disabled'
+                        elif bio_material_rule:
+                            popup_decision=('Saved without popup because confirmed Brain Tree popups are disabled'
+                                            if rule=='BIO_BRAIN_TREE_CONFIRMED' else
+                                            'Saved without popup because biological material candidate popups are disabled')
                         elif anomaly_rule:
                             popup_decision='Saved to unified history without popup because anomaly popups are disabled'
                         elif discovery_status_rule:
@@ -3313,7 +3343,7 @@ class AlertPopup(tk.Toplevel):
                 return False
             widget=self.winfo_containing(self.winfo_pointerx(),self.winfo_pointery())
             return bool(widget and widget.winfo_toplevel()==self)
-        except tk.TclError:
+        except (tk.TclError,KeyError):
             return False
 
     def _update_countdown(self):
@@ -3413,6 +3443,9 @@ class App(tk.Tk):
         self.surface_popup_vars={category:tk.BooleanVar(value=enabled)
                                  for category,enabled in surface_signal_popup_preferences().items()}
         self.stratum_popups=tk.BooleanVar(value=stratum_popup_preference())
+        brain_tree_popups,bio_material_candidate_popups=biological_material_popup_preferences()
+        self.brain_tree_popups=tk.BooleanVar(value=brain_tree_popups)
+        self.bio_material_candidate_popups=tk.BooleanVar(value=bio_material_candidate_popups)
         self.before_leave=tk.BooleanVar(value=before_leave_preference())
         self.known_pois_on_arrival = tk.BooleanVar(value=known_poi_arrival_preference())
         self.arrival_discovery_status = tk.BooleanVar(value=arrival_discovery_status_preference())
@@ -3826,6 +3859,15 @@ class App(tk.Tk):
         ttk.Checkbutton(surface_alerts,text='Stratum leads and Tectonicas confirmations',
                         variable=self.stratum_popups,
                         command=self.save_stratum_popup_setting).pack(anchor='w',pady=2)
+        ttk.Checkbutton(surface_alerts,text='Confirmed Brain Tree sites',
+                        variable=self.brain_tree_popups,
+                        command=self.save_biological_material_popup_setting).pack(anchor='w',pady=2)
+        ttk.Checkbutton(surface_alerts,text='Possible biological material opportunities (experimental)',
+                        variable=self.bio_material_candidate_popups,
+                        command=self.save_biological_material_popup_setting).pack(anchor='w',pady=2)
+        ttk.Label(surface_alerts,text=('Candidate alerts are off by default. They combine biological signals with '
+                                       'the body\'s recorded Grade 3 and Grade 4 raw materials; they do not confirm Brain Trees.'),
+                  wraplength=820).pack(anchor='w',pady=(0,4))
         startup=ttk.LabelFrame(signals,text='Startup',padding=10); startup.pack(fill='x',pady=(12,0))
         ttk.Checkbutton(startup,text='Start monitoring automatically when Discovery Watch opens',
                         variable=self.auto_start_monitoring,command=self.save_interface_settings).pack(anchor='w')
@@ -4304,6 +4346,8 @@ class App(tk.Tk):
             for category,default in SURFACE_POPUP_DEFAULTS.items():
                 self.surface_popup_vars[category].set(default)
             self.stratum_popups.set(True)
+            self.brain_tree_popups.set(True)
+            self.bio_material_candidate_popups.set(False)
             self.before_leave.set(True)
             self.known_pois_on_arrival.set(True)
             self.arrival_discovery_status.set(False)
@@ -4630,6 +4674,13 @@ class App(tk.Tk):
     def save_stratum_popup_setting(self):
         try:
             save_stratum_popup_preference(self.stratum_popups.get())
+        except sqlite3.Error as exc:
+            messagebox.showerror('Setting not saved',str(exc))
+
+    def save_biological_material_popup_setting(self):
+        try:
+            save_biological_material_popup_preferences(
+                self.brain_tree_popups.get(),self.bio_material_candidate_popups.get())
         except sqlite3.Error as exc:
             messagebox.showerror('Setting not saved',str(exc))
 
@@ -5155,7 +5206,9 @@ class App(tk.Tk):
                                           self.stratum_popups.get(),self.before_leave.get(),
                                           self.surface_popup_vars['geological'].get(),
                                           self.surface_popup_vars['human'].get(),
-                                          self.arrival_discovery_status.get()))
+                                          self.arrival_discovery_status.get(),
+                                          self.brain_tree_popups.get(),
+                                          self.bio_material_candidate_popups.get()))
             for arrived_system in self.monitor.arrived_systems:
                 self.request_edsm_lookup(arrived_system)
             if self.monitor.total_events>previous_total:

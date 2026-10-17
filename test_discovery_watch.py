@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from discovery_watch import (App, AlertPopup, Monitor, classify, detect_anomalies,
                              surface_signal_observations, surface_signal_findings,
+                             biological_material_findings,
                              stratum_findings, stratum_popup_preference,
                              save_stratum_popup_preference,
                              before_leave_preference, save_before_leave_preference,
@@ -41,6 +42,8 @@ from discovery_watch import (App, AlertPopup, Monitor, classify, detect_anomalie
                              save_planetary_mining_popup_preference,
                              surface_signal_popup_preferences,
                              save_surface_signal_popup_preferences,
+                             biological_material_popup_preferences,
+                             save_biological_material_popup_preferences,
                              popup_above_game_preference, save_popup_above_game_preference,
                              popup_sound_preference, save_popup_sound_preference,
                              popup_monitor_preference, save_popup_monitor_preference,
@@ -88,7 +91,7 @@ from discovery_watch_core.exploration_criteria import gas_giant_bulk_density
 
 class DiscoveryWatchTests(unittest.TestCase):
     def test_v112_alert_levels_preferences_and_diagnostics(self):
-        self.assertEqual(APP_VERSION,'1.33.4')
+        self.assertEqual(APP_VERSION,'1.34.0')
         self.assertEqual(alert_level('MEGASHIP'),'Important')
         self.assertEqual(alert_level('ANOMALY_ALERT'),'Review')
         self.assertEqual(alert_level('UNIDENTIFIED_SIGNAL'),'Informational')
@@ -116,7 +119,7 @@ class DiscoveryWatchTests(unittest.TestCase):
                 self.assertEqual((summary['findings'],summary['unresolved']),(2,1))
                 report=monitor.diagnostic_report()
                 encoded=json.dumps(report)
-                self.assertEqual(report['application']['version'],'1.33.4')
+                self.assertEqual(report['application']['version'],'1.34.0')
                 self.assertNotIn('must-not-leak',encoded)
                 self.assertEqual(report['database']['row_counts']['alerts'],2)
 
@@ -3495,3 +3498,84 @@ class Version1333WindowsPopupWrappingTests(unittest.TestCase):
     def test_cascade_position_never_shrinks_overlay_content_height(self):
         positioned=windows_cascade_position((0,0,1366,768),(500,300),'Bottom right',1)
         self.assertEqual(positioned[2:],(500,300))
+
+
+class Version1335LinuxMintPopupTimerTests(unittest.TestCase):
+    def test_temporary_popdown_widget_does_not_break_hover_check(self):
+        class MintPopupProbe:
+            _initial_pointer=(100,100)
+            _pointer_interacted=True
+            def winfo_pointerx(self): return 100
+            def winfo_pointery(self): return 100
+            def winfo_containing(self,_x,_y): raise KeyError('popdown')
+
+        self.assertFalse(AlertPopup._pointer_is_inside(MintPopupProbe()))
+
+
+class Version1340BiologicalMaterialIntelligenceTests(unittest.TestCase):
+    def setUp(self):
+        self.scan={'event':'Scan','BodyName':'Material System A 1','BodyID':4,'Landable':True,
+                   'Materials':[{'Name':'chromium','Percent':8.4},
+                                {'Name':'niobium','Percent':1.3},
+                                {'Name':'technetium','Percent':0.7},
+                                {'Name':'iron','Percent':18.0}]}
+
+    def test_biological_signal_and_material_table_create_cautious_candidate(self):
+        event={'event':'FSSBodySignals','BodyName':'Material System A 1','BodyID':4,
+               'Signals':[{'Type':'$SAA_SignalType_Biological;','Count':2}]}
+        result=biological_material_findings(event,[self.scan])
+        self.assertEqual(result[0][0],'BIO_MATERIAL_CANDIDATE')
+        self.assertIn('Technetium (G4, 0.70%)',result[0][2])
+        self.assertIn('Niobium (G3, 1.30%)',result[0][2])
+        self.assertNotIn('Chromium',result[0][2])
+        self.assertIn('not confirmation of Brain Trees',result[0][2])
+
+    def test_brain_tree_genus_creates_confirmed_finding(self):
+        event={'event':'SAASignalsFound','BodyName':'Material System A 1','BodyID':4,
+               'Signals':[{'Type_Localised':'Biological','Count':1}],
+               'Genuses':[{'Genus':'$Codex_Ent_BrainTree_Genus_Name;',
+                           'Genus_Localised':'Brain Tree'}]}
+        result=biological_material_findings(event,[self.scan])
+        self.assertEqual(result[0][0],'BIO_BRAIN_TREE_CONFIRMED')
+        self.assertIn('Brain Tree',result[0][2])
+        self.assertIn('Technetium (G4, 0.70%)',result[0][2])
+
+    def test_biology_without_high_grade_material_evidence_is_not_a_candidate(self):
+        event={'event':'FSSBodySignals','BodyName':'Material System A 2','BodyID':5,
+               'Signals':[{'Type_Localised':'Biological','Count':1}]}
+        low={'event':'Scan','BodyName':'Material System A 2','BodyID':5,
+             'Materials':[{'Name':'iron','Percent':20.0},{'Name':'chromium','Percent':9.0}]}
+        self.assertEqual(biological_material_findings(event,[low]),[])
+
+    def test_popup_preferences_confirm_by_default_and_candidates_opt_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path=Path(directory)/'preferences.sqlite3'
+            self.assertEqual(biological_material_popup_preferences(db_path),(True,False))
+            save_biological_material_popup_preferences(False,True,db_path)
+            self.assertEqual(biological_material_popup_preferences(db_path),(False,True))
+
+    def test_confirmed_brain_tree_reaches_popup_while_candidate_stays_silent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory); journal=folder/'Journal.brain-trees.log'; journal.write_text('')
+            with Monitor(folder,db_path=folder/'watch.sqlite3') as monitor:
+                events=[
+                    {'timestamp':'1','event':'FSDJump','StarSystem':'Material System','SystemAddress':1340},
+                    dict(self.scan,timestamp='2',StarSystem='Material System',SystemAddress=1340),
+                    {'timestamp':'3','event':'FSSBodySignals','BodyName':'Material System A 1','BodyID':4,
+                     'SystemAddress':1340,'Signals':[{'Type_Localised':'Biological','Count':1}]},
+                    {'timestamp':'4','event':'SAASignalsFound','BodyName':'Material System A 1','BodyID':4,
+                     'SystemAddress':1340,'Signals':[{'Type_Localised':'Biological','Count':1}],
+                     'Genuses':[{'Genus_Localised':'Brain Tree'}]},
+                ]
+                with journal.open('a',encoding='utf-8') as output:
+                    for event in events: output.write(json.dumps(event)+'\n')
+                monitor.poll()
+                rules=[row[0] for row in monitor.db.execute(
+                    "SELECT rule FROM alerts WHERE rule LIKE 'BIO_%' ORDER BY id")]
+                self.assertIn('BIO_MATERIAL_CANDIDATE',rules)
+                self.assertIn('BIO_BRAIN_TREE_CONFIRMED',rules)
+                popup_titles=[row[0] for row in monitor.popup_findings]
+                self.assertNotIn('Biological material opportunity',popup_titles)
+                self.assertIn('Brain Trees confirmed',popup_titles)
+                case=monitor.db.execute("SELECT title,state FROM discovery_cases WHERE target_key='bio:material'").fetchone()
+                self.assertEqual(case,('Brain Trees','Confirmed'))

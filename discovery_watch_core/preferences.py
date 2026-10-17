@@ -25,7 +25,8 @@ __all__ = (
     'save_planetary_mining_popup_preference',
     'surface_signal_popup_preferences',
     'save_surface_signal_popup_preferences', 'stratum_popup_preference',
-    'save_stratum_popup_preference', 'before_leave_preference',
+    'save_stratum_popup_preference', 'biological_material_popup_preferences',
+    'save_biological_material_popup_preferences', 'before_leave_preference',
     'save_before_leave_preference', 'popup_above_game_preference',
     'save_popup_above_game_preference', 'popup_sound_preference',
     'save_popup_sound_preference', 'popup_monitor_preference',
@@ -208,6 +209,29 @@ def save_stratum_popup_preference(enabled, db_path=DB_PATH):
         db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
         db.execute("INSERT OR REPLACE INTO preferences(key,value) VALUES('stratum_popups',?)",
                    ('1' if enabled else '0',))
+
+
+def biological_material_popup_preferences(db_path=DB_PATH):
+    """Confirmed Brain Trees alert by default; speculative material leads are opt-in."""
+    Path(db_path).parent.mkdir(parents=True,exist_ok=True)
+    with _preference_connection(db_path) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        db.execute("INSERT OR IGNORE INTO preferences(key,value) VALUES('brain_tree_popups','1')")
+        db.execute("INSERT OR IGNORE INTO preferences(key,value) VALUES('bio_material_candidate_popups','0')")
+        values=dict(db.execute("SELECT key,value FROM preferences WHERE key IN "
+                               "('brain_tree_popups','bio_material_candidate_popups')"))
+    return (values.get('brain_tree_popups','1')=='1',
+            values.get('bio_material_candidate_popups','0')=='1')
+
+
+def save_biological_material_popup_preferences(confirmed,candidates,db_path=DB_PATH):
+    Path(db_path).parent.mkdir(parents=True,exist_ok=True)
+    with _preference_connection(db_path) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        db.executemany('INSERT OR REPLACE INTO preferences(key,value) VALUES(?,?)',(
+            ('brain_tree_popups','1' if confirmed else '0'),
+            ('bio_material_candidate_popups','1' if candidates else '0'),
+        ))
 
 
 def before_leave_preference(db_path=DB_PATH):

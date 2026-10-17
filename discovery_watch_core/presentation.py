@@ -62,6 +62,15 @@ def discovery_history_detail_summary(title,detail,raw_json='',rule=''):
         summary=labels.get(rule,'Surface signal')
         return f'{summary} • {event_name}' if event_name else summary
 
+    if rule in ('BIO_BRAIN_TREE_CONFIRMED','BIO_MATERIAL_CANDIDATE'):
+        label=('Brain Trees confirmed' if rule=='BIO_BRAIN_TREE_CONFIRMED'
+               else 'Possible biological material opportunity')
+        marker='Potential raw engineering materials from the body scan: '
+        if marker in detail:
+            materials=detail.split(marker,1)[1].split('. ',1)[0]
+            return f'{label} • {materials}'
+        return label
+
     identity=popup_identity(event,title,rule)
     signal_label=popup_signal_label(identity)
     if signal_label:
@@ -141,6 +150,10 @@ def popup_category_labels(finding,identity=None):
     elif 'stellar phenomenon' in text: add('Stellar phenomenon')
     if 'stratum tectonicas' in text: add('Stratum Tectonicas')
     elif 'stratum' in text: add('Stratum biological signal')
+    if 'brain trees confirmed' in text or 'bio_brain_tree_confirmed' in text:
+        add('Brain Trees')
+    elif 'biological material opportunity' in text or 'bio_material_candidate' in text:
+        add('Biological material opportunity')
     if 'earthlike body' in text or 'earth-like world' in text: add('Earth-like world')
     if 'water world' in text: add('Water world')
     if 'ammonia world' in text: add('Ammonia world')
@@ -237,7 +250,7 @@ def simplify_popup_content(findings,metadata=None):
             key=(str(row[1] or '').casefold(),label.casefold(),body_name.casefold())
             if key in seen: continue
             seen.add(key)
-            key_fact=popup_key_fact(label,identity)
+            key_fact=identity.get('key_fact') or popup_key_fact(label,identity)
             simplified.append((display_label,row[1],'Check Discovery History for more information.'))
             simplified_metadata.append({'name':display_label,
                 'signal_type':identity.get('signal_type') or 'Discovery finding',

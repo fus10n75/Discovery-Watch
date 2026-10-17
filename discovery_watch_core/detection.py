@@ -8,6 +8,14 @@ from .intelligence import finding_policy
 from .exploration_criteria import detect_exploration_criteria
 
 
+RAW_MATERIAL_GRADES={
+    'carbon':1,'iron':1,'nickel':1,'phosphorus':1,'sulphur':1,
+    'chromium':2,'germanium':2,'manganese':2,'vanadium':2,'zinc':2,'zirconium':2,
+    'arsenic':3,'cadmium':3,'mercury':3,'molybdenum':3,'niobium':3,'tin':3,'tungsten':3,
+    'antimony':4,'polonium':4,'ruthenium':4,'selenium':4,'tellurium':4,'technetium':4,'yttrium':4,
+}
+
+
 def alert_level(rule, priority=None):
     """Return a stable, human-facing attention level for a discovery alert."""
     policy=finding_policy(rule)
@@ -192,6 +200,75 @@ def stratum_findings(event):
                      f'ScanOrganic: Body={body}; Species={species}; Scan progress={scan_type}. '
                      'Confirmed directly from the journal species field.')]
     return []
+
+
+def _matching_body_scan(event,system_scans):
+    """Return the latest scan for the signal body's stable ID, then its name."""
+    body_id=event.get('BodyID')
+    body_name=str(event.get('BodyName') or event.get('Body') or '').casefold()
+    matches=[]
+    for scan in system_scans or ():
+        if not isinstance(scan,dict):
+            continue
+        if body_id is not None and scan.get('BodyID')==body_id:
+            matches.append(scan)
+        elif body_id is None and body_name and str(scan.get('BodyName') or '').casefold()==body_name:
+            matches.append(scan)
+    return matches[-1] if matches else None
+
+
+def _material_opportunities(scan,minimum_grade=3,limit=5):
+    """Return the most valuable journal-reported raw materials on one body."""
+    ranked=[]
+    for item in (scan or {}).get('Materials') or []:
+        if not isinstance(item,dict):
+            continue
+        internal=str(item.get('Name') or '').strip()
+        display=str(item.get('Name_Localised') or internal.replace('_',' ').title()).strip()
+        grade=RAW_MATERIAL_GRADES.get(internal.casefold())
+        percent=item.get('Percent')
+        if not display or grade is None or grade<minimum_grade:
+            continue
+        ranked.append((grade,float(percent) if isinstance(percent,(int,float)) else None,display))
+    ranked.sort(key=lambda value:(-value[0],-(value[1] if value[1] is not None else -1),value[2].casefold()))
+    return ranked[:limit]
+
+
+def biological_material_findings(event,system_scans=()):
+    """Identify confirmed Brain Trees or cautious biology/material opportunities."""
+    if event.get('event') not in ('FSSBodySignals','SAASignalsFound'):
+        return []
+    observations=surface_signal_observations(event)
+    if not any(item['category']=='biological' for item in observations):
+        return []
+    body=str(event.get('BodyName') or event.get('Body') or 'Unnamed body')
+    genera=[]
+    for item in event.get('Genuses') or []:
+        if isinstance(item,dict):
+            genera.append(str(item.get('Genus_Localised') or item.get('Genus') or '').strip())
+    confirmed=any('braintree' in ''.join(character for character in genus.casefold()
+                                         if character.isalnum()) for genus in genera)
+    scan=_matching_body_scan(event,system_scans)
+    materials=_material_opportunities(scan)
+    if materials:
+        material_text=', '.join(
+            f'{name} (G{grade}' + (f', {percent:.2f}%' if percent is not None else '') + ')'
+            for grade,percent,name in materials)
+    else:
+        material_text='No Grade 3 or Grade 4 composition data is currently recorded for this body'
+    if confirmed:
+        genus=next((value for value in genera if 'braintree' in ''.join(
+            character for character in value.casefold() if character.isalnum())), 'Brain Tree')
+        return [('BIO_BRAIN_TREE_CONFIRMED','Brain Trees confirmed',
+                 f'SAASignalsFound: Body={body}; Genus={genus}. '
+                 f'Potential raw engineering materials from the body scan: {material_text}. '
+                 'Surface investigation recommended.')]
+    if not materials:
+        return []
+    return [('BIO_MATERIAL_CANDIDATE','Biological material opportunity',
+             f'{event.get("event")}: Body={body}; Biological signals detected. '
+             f'Potential raw engineering materials from the body scan: {material_text}. '
+             'This is a material-bearing biological lead, not confirmation of Brain Trees.')]
 
 
 def detect_anomalies(event, system_scans=(), enabled_criteria=None):
