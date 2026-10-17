@@ -48,6 +48,7 @@ Discovery Watch includes:
 - Explainable anomaly and notable-world detection
 - Experimental exploration leads that are clearly labelled
 - Configurable alert rules and diagnostic tools
+- Possible Brain tree location
 
 ## Offline-first and private
 
