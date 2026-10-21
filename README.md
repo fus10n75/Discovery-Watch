@@ -26,6 +26,7 @@ information so you can review it later.
 - Interesting rings, moons and binary systems
 - Experimental possible Green Gas Giant candidates
 - Useful exploration and engineering-material opportunities
+- Experimental Brain tree location
 
 Notifications are kept short so they do not overload you during flight. Every
 finding is saved in **Discovery History**, where you can review the system,
@@ -48,7 +49,6 @@ Discovery Watch includes:
 - Explainable anomaly and notable-world detection
 - Experimental exploration leads that are clearly labelled
 - Configurable alert rules and diagnostic tools
-- Possible Brain tree location
 
 ## Offline-first and private
 
@@ -115,7 +115,7 @@ phenomenon.
 
 ## Current testing release
 
-The current public beta is **v1.33.3**.
+The current public beta is **v1.34.0**.
 
 The project is undergoing real in-game testing on Windows and Linux. Feedback
 about missed discoveries, duplicate alerts, incorrect classifications, popup
@@ -134,19 +134,6 @@ When reporting a problem, include:
 
 Please review diagnostic files and journal extracts before sharing them, as
 local paths or commander-related information may be present.
-
-## Running the tests
-
-Discovery Watch includes an automated regression suite. From the project
-folder, run:
-
-```bash
-python3 -m unittest discover -v
-```
-
-The v1.33.3 suite contains **197 automated tests** covering detection,
-suppression rules, journal context, database compatibility, popup presentation
-and Windows overlay behaviour.
 
 ## Project status
 
