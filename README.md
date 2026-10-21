@@ -78,24 +78,11 @@ Packaged standalone editions are planned for the full public release.
 
 ### Windows
 
-1. Download and extract the latest testing ZIP from
-   [GitHub Releases](https://github.com/fus10n75/Discovery-Watch/releases).
-2. Open the extracted folder.
-3. Run:
-
-   ```powershell
-   py discovery_watch.py
-   ```
+Download and Install the .exe
 
 ### Linux
 
-1. Install Python and Tkinter if they are not already available.
-2. Download and extract the latest testing ZIP.
-3. Open a terminal in the extracted folder and run:
-
-   ```bash
-   python3 discovery_watch.py
-   ```
+Download and run the Appimage.
 
 Linux commanders running Elite through Steam/Proton may need to browse to the
 journal folder inside the game's Proton prefix.
