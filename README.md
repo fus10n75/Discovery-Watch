@@ -73,9 +73,6 @@ computer.
 
 Discovery Watch currently runs on **Windows and Linux**.
 
-The public testing version requires **Python 3.9 or newer** with Tkinter.
-Packaged standalone editions are planned for the full public release.
-
 ### Windows
 
 Download and Install the .exe
