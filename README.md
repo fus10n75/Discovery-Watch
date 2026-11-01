@@ -112,8 +112,6 @@ phenomenon.
 
 ## Current testing release
 
-The current public beta is **v1.34.0**.
-
 The project is undergoing real in-game testing on Windows and Linux. Feedback
 about missed discoveries, duplicate alerts, incorrect classifications, popup
 behaviour and display compatibility is extremely valuable.
